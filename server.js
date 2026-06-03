@@ -15,19 +15,19 @@ const auth = basicAuth({
   challenge: true
 });
 
-// === ROOT ===
+// ROOT
 app.get('/', (req, res) => {
-  res.send('<h1>IP Logger Online</h1><p><a href="/admin">Ga naar Dashboard</a></p>');
+  res.send('<h1>✅ IP Logger is Online</h1><p><a href="/admin">→ Ga naar Dashboard</a></p>');
 });
 
-// === TRACKER ===
+// TRACKER
 app.get('/track/:id', async (req, res) => {
   const trackerId = req.params.id;
   const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').replace('::ffff:', '');
   const userAgent = req.headers['user-agent'] || 'Unknown';
   const referer = req.headers.referer || 'Direct';
 
-  let destinationUrl = "https://youtube.com";
+  let destinationUrl = "https://youtube.com"; // Verander dit later per link
 
   try {
     const parser = uaParser(userAgent);
@@ -52,9 +52,7 @@ app.get('/track/:id', async (req, res) => {
       referer: referer
     };
 
-    // Opslaan in logs.txt
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-
     console.log(`✅ Gelogd → ${trackerId} | IP: ${ip}`);
 
   } catch (error) {
@@ -67,7 +65,7 @@ app.get('/track/:id', async (req, res) => {
   res.send(html);
 });
 
-// === ADMIN ===
+// ADMIN DASHBOARD
 app.get('/admin', auth, (req, res) => {
   res.sendFile(__dirname + '/views/admin.html');
 });
@@ -75,9 +73,8 @@ app.get('/admin', auth, (req, res) => {
 app.get('/api/logs', auth, (req, res) => {
   if (fs.existsSync('logs.txt')) {
     const data = fs.readFileSync('logs.txt', 'utf8');
-    const logs = data.trim().split('\n').filter(line => line).map(line => JSON.parse(line));
-    logs.reverse();
-    res.json(logs);
+    const logs = data.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    res.json(logs.reverse());
   } else {
     res.json([]);
   }
