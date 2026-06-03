@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <title>IP Logger Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #1e1e1e; color: #eee; margin: 0; padding: 20px; }
+    h1, h2 { color: #00ff88; }
+    .container { max-width: 1200px; margin: auto; }
+    input, button, textarea { padding: 10px; margin: 5px; border-radius: 5px; }
+    button { background: #00ff88; color: black; font-weight: bold; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #2a2a2a; }
+    th, td { padding: 12px; border: 1px solid #444; text-align: left; }
+    th { background: #00aa66; }
+    .copy-btn { background: #555; color: white; padding: 5px 10px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔥 IP Logger Dashboard</h1>
+
+    <!-- Nieuwe link aanmaken -->
+    <h2>Nieuwe Tracking Link Aanmaken</h2>
+    <input type="text" id="name" placeholder="Naam (bijv. TikTok video)" style="width:300px;">
+    <input type="text" id="destination" placeholder="Doel URL[](https://...)" style="width:400px;">
+    <button onclick="createTracker()">Link Aanmaken</button>
+
+    <hr>
+
+    <!-- Lijst van gemaakte links -->
+    <h2>Je Tracking Links</h2>
+    <table id="trackersTable">
+      <thead>
+        <tr>
+          <th>Naam</th>
+          <th>Tracking Link</th>
+          <th>Bestemming</th>
+          <th>Aangemaakt</th>
+          <th>Actie</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <hr>
+
+    <!-- Logs -->
+    <h2>Laatste Logs</h2>
+    <table id="logsTable">
+      <thead>
+        <tr>
+          <th>Tijd</th>
+          <th>Tracker</th>
+          <th>IP</th>
+          <th>Land</th>
+          <th>Stad</th>
+          <th>Browser / OS</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+    // Nieuwe tracker maken
+    async function createTracker() {
+      const name = document.getElementById('name').value;
+      const destination = document.getElementById('destination').value;
+
+      if (!name || !destination) {
+        alert("Vul naam en doel URL in!");
+        return;
+      }
+
+      const res = await fetch('/api/trackers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, destination_url: destination })
+      });
+
+      const data = await res.json();
+      alert(`Link aangemaakt!\n\n/track/${data.tracker_id}`);
+      loadTrackers();
+    }
+
+    // Trackers laden
+    async function loadTrackers() {
+      const res = await fetch('/api/trackers');
+      const trackers = await res.json();
+      const tbody = document.querySelector('#trackersTable tbody');
+      tbody.innerHTML = '';
+
+      trackers.forEach(t => {
+        const fullLink = `http://localhost:3000/track/${t.tracker_id}`;
+        const row = `
+          <tr>
+            <td>${t.name}</td>
+            <td><code>${fullLink}</code> <button class="copy-btn" onclick="copyToClipboard('${fullLink}')">Kopiëren</button></td>
+            <td>${t.destination_url}</td>
+            <td>${new Date(t.created_at).toLocaleString('nl-NL')}</td>
+            <td><button onclick="testLink('${t.tracker_id}')">Testen</button></td>
+          </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text);
+      alert("Link gekopieerd!");
+    }
+
+    function testLink(id) {
+      window.open(`/track/${id}`, '_blank');
+    }
+
+    // Logs laden
+    async function loadLogs() {
+      const res = await fetch('/api/logs');
+      const logs = await res.json();
+      const tbody = document.querySelector('#logsTable tbody');
+      tbody.innerHTML = '';
+
+      logs.forEach(log => {
+        const row = `<tr>
+          <td>${new Date(log.timestamp).toLocaleString('nl-NL')}</td>
+          <td>${log.tracker_id}</td>
+          <td>${log.ip}</td>
+          <td>${log.country}</td>
+          <td>${log.city}</td>
+          <td>${log.browser} / ${log.os}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    // Initial load
+    loadTrackers();
+    loadLogs();
+  </script>
+</body>
+</html>

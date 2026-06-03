@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <title>Even geduld...</title>
+  <style>
+    body { background:#0f0f0f; color:white; font-family:Arial; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
+    .loader { border:5px solid #333; border-top:5px solid #00ff88; border-radius:50%; width:60px; height:60px; animation:spin 1s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div style="text-align:center">
+    <div class="loader"></div>
+    <h2>Even geduld...</h2>
+    <p>Wordt doorgestuurd</p>
+  </div>
+
+  <script>
+    setTimeout(() => {
+      window.location.href = "{{DESTINATION_URL}}";
+    }, 1200);
+  </script>
+</body>
+</html>
