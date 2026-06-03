@@ -7,7 +7,6 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "mysql2": "^3.11.0",
     "dotenv": "^16.4.5",
     "ua-parser-js": "^1.0.39",
     "express-basic-auth": "^1.2.1"
