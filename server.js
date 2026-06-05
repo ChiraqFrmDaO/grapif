@@ -89,9 +89,21 @@ app.post('/api/log-geo', (req, res) => {
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const parser = uaParser(userAgent);
 
+    let trackerName = 'Onbekend';
+    if (fs.existsSync('trackers.json')) {
+      try {
+        const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
+        const tracker = trackers.find(t => t.tracker_id === tracker_id);
+        if (tracker && tracker.name) trackerName = tracker.name;
+      } catch (e) {
+        console.error('Error loading trackers.json for log-geo:', e);
+      }
+    }
+
     const log = {
       timestamp: new Date().toISOString(),
       tracker_id: tracker_id,
+      tracker_name: trackerName,
       ip: ip || 'Unknown',
       country: country || 'Unknown',
       city: city || 'Unknown',
@@ -106,7 +118,7 @@ app.post('/api/log-geo', (req, res) => {
     };
 
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`📍 Browser Geo opgeslagen → ${country} - ${city} (${lat}, ${lon})`);
+    console.log(`📍 Browser Geo opgeslagen → ${trackerName} | ${country} - ${city} (${lat}, ${lon})`);
     res.json({ success: true });
   } catch (e) {
     console.error("Geo save error:", e);
@@ -184,7 +196,7 @@ app.get('/api/logs', auth, (req, res) => {
 
     const logsWithNames = logs.map(log => ({
       ...log,
-      name: trackerMap[log.tracker_id]?.name || 'Onbekend'
+      name: log.tracker_name || trackerMap[log.tracker_id]?.name || 'Onbekend'
     }));
 
     res.json(logsWithNames.reverse());

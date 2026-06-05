@@ -140,6 +140,7 @@
     <table id="logsTable">
       <thead>
         <tr>
+          <th>Naam</th>
           <th>Tijd</th>
           <th>Tracker</th>
           <th>IP</th>
@@ -211,10 +212,15 @@
       const hasCoords = log.latitude && log.longitude;
 
       let html = `
+        
         <div class="detail-grid">
           <div class="detail-item">
-            <strong>Tijdstempel:</strong><br>
-            ${new Date(log.timestamp).toLocaleString('nl-NL')}
+              <strong>Tijdstempel:</strong><br>
+              ${new Date(log.timestamp).toLocaleString('nl-NL')}
+            </div>
+            <div class="detail-item">
+            <strong>Tracker Naam:</strong><br>
+            ${log.name || log.tracker_name || 'Onbekend'}
           </div>
           <div class="detail-item">
             <strong>Tracker ID:</strong><br>
@@ -223,7 +229,7 @@
           <div class="detail-item">
             <strong>IP Adres:</strong><br>
             ${log.ip}
-          </div>
+          </div> 
           <div class="detail-item">
             <strong>Land:</strong><br>
             ${log.country}
@@ -294,6 +300,7 @@
         tbody.innerHTML = '';
         logs.forEach((log, idx) => {
           const row = `<tr>
+            <td>${log.name || 'Onbekend'}</td>
             <td>${new Date(log.timestamp).toLocaleString('nl-NL')}</td>
             <td>${log.tracker_id}</td>
             <td>${log.ip}</td>
