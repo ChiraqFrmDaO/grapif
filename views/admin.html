@@ -197,7 +197,7 @@
       if (baseUrl.endsWith('/')) {
         baseUrl = baseUrl.slice(0, -1);
       }
-      const fullLink = `${baseUrl}/track/${trackerId}`;
+      const fullLink = `${baseUrl}/${trackerId}`;
 
       try {
         await fetch('/api/save-tracker', {

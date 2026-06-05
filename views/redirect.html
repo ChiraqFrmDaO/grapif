@@ -18,7 +18,7 @@
   </div>
 
   <script>
-    const trackerId = window.location.pathname.split('/').pop();
+    const trackerId = window.location.pathname.replace(/^\/+|\/+$/g, '');
     const statusEl = document.getElementById('status');
 
     // Geo ophalen + doorsturen
