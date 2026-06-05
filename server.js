@@ -15,7 +15,7 @@ const auth = basicAuth({
   challenge: true
 });
 
-JavaScript// === MOEIE LANDING PAGE ===
+// === MOEIE LANDING PAGE ===
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
