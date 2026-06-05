@@ -130,9 +130,15 @@
 
     <h2>Nieuwe Tracking Link Aanmaken</h2>
     <input type="text" id="name" placeholder="Naam (bijv. TikTok video)" style="width:300px;">
-    <input type="text" id="domain" value="https://" placeholder="Domeinnaam (https://example.com)" style="width:400px;">
+    <select id="domainPreset" style="width:415px; padding:12px; margin:8px 4px; border-radius:8px; border:none; font-family:'Inter',sans-serif;">
+      <option value="current">Gebruik huidige domein</option>
+      <option value="https://example.com">https://example.com</option>
+      <option value="https://tracker.example.com">https://tracker.example.com</option>
+      <option value="custom">Eigen domein</option>
+    </select>
+    <input type="text" id="domain" value="https://" placeholder="Domeinnaam (https://example.com)" style="width:400px;" disabled>
     <input type="text" id="destination" value="https://" placeholder="Doel URL (https://...)" style="width:400px;">
-    <p style="margin: 4px 0 12px; opacity: 0.8; font-size: 0.95rem;">Je kunt hier een eigen domein opgeven voor de trackerlink. Zorg dat het domein naar deze server verwijst.</p>
+    <p style="margin: 4px 0 12px; opacity: 0.8; font-size: 0.95rem;">Kies een van de voorgedefinieerde domeinen of selecteer "Eigen domein" om zelf een domein in te vullen.</p>
     <button onclick="generateLink()">Link Aanmaken</button>
 
     <div id="result"></div>
@@ -174,6 +180,7 @@
 
     async function generateLink() {
       const name = document.getElementById('name').value.trim();
+      const preset = document.getElementById('domainPreset').value;
       const domain = document.getElementById('domain').value.trim();
       const destination = document.getElementById('destination').value.trim();
 
@@ -184,11 +191,13 @@
 
       const trackerId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 10);
       let baseUrl = window.location.origin;
-      if (domain) {
+      if (preset === 'custom') {
         baseUrl = domain.startsWith('http') ? domain : `https://${domain}`;
-        if (baseUrl.endsWith('/')) {
-          baseUrl = baseUrl.slice(0, -1);
-        }
+      } else if (preset !== 'current') {
+        baseUrl = preset;
+      }
+      if (baseUrl.endsWith('/')) {
+        baseUrl = baseUrl.slice(0, -1);
       }
       const fullLink = `${baseUrl}/track/${trackerId}`;
 
@@ -216,6 +225,23 @@
       navigator.clipboard.writeText(link);
       alert("Gekopieerd!");
     }
+
+    function updateDomainInput() {
+      const preset = document.getElementById('domainPreset').value;
+      const domainInput = document.getElementById('domain');
+
+      if (preset === 'custom') {
+        domainInput.disabled = false;
+        domainInput.value = 'https://';
+        domainInput.focus();
+      } else {
+        domainInput.disabled = true;
+        domainInput.value = preset === 'current' ? window.location.origin : preset;
+      }
+    }
+
+    document.getElementById('domainPreset').addEventListener('change', updateDomainInput);
+    updateDomainInput();
 
     function showDetails(logIndex) {
       const log = allLogs[logIndex];
