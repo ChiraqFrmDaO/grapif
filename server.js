@@ -168,7 +168,26 @@ app.get('/api/logs', auth, (req, res) => {
   if (fs.existsSync('logs.txt')) {
     const data = fs.readFileSync('logs.txt', 'utf8');
     const logs = data.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-    res.json(logs.reverse());
+
+    let trackerMap = {};
+    if (fs.existsSync('trackers.json')) {
+      try {
+        const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
+        trackerMap = trackers.reduce((acc, tracker) => {
+          acc[tracker.tracker_id] = tracker;
+          return acc;
+        }, {});
+      } catch (e) {
+        console.error('Error loading trackers.json:', e);
+      }
+    }
+
+    const logsWithNames = logs.map(log => ({
+      ...log,
+      name: trackerMap[log.tracker_id]?.name || 'Onbekend'
+    }));
+
+    res.json(logsWithNames.reverse());
   } else {
     res.json([]);
   }
