@@ -130,7 +130,8 @@
 
     <h2>Nieuwe Tracking Link Aanmaken</h2>
     <input type="text" id="name" placeholder="Naam (bijv. TikTok video)" style="width:300px;">
-    <input type="text" id="destination" value="https://" placeholder="Doel URL (https://...)" style="width:500px;">
+    <input type="text" id="domain" value="https://" placeholder="Domeinnaam (https://example.com)" style="width:400px;">
+    <input type="text" id="destination" value="https://" placeholder="Doel URL (https://...)" style="width:400px;">
     <button onclick="generateLink()">Link Aanmaken</button>
 
     <div id="result"></div>
@@ -172,6 +173,7 @@
 
     async function generateLink() {
       const name = document.getElementById('name').value.trim();
+      const domain = document.getElementById('domain').value.trim();
       const destination = document.getElementById('destination').value.trim();
 
       if (!name || !destination) {
@@ -180,7 +182,14 @@
       }
 
       const trackerId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 10);
-      const fullLink = `${window.location.origin}/track/${trackerId}`;
+      let baseUrl = window.location.origin;
+      if (domain) {
+        baseUrl = domain.startsWith('http') ? domain : `https://${domain}`;
+        if (baseUrl.endsWith('/')) {
+          baseUrl = baseUrl.slice(0, -1);
+        }
+      }
+      const fullLink = `${baseUrl}/track/${trackerId}`;
 
       try {
         await fetch('/api/save-tracker', {
