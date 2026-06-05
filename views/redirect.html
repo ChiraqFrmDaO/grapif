@@ -4,22 +4,82 @@
   <meta charset="UTF-8">
   <title>Even geduld...</title>
   <style>
-    body { background:#0f0f0f; color:white; font-family:Arial; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
-    .loader { border:5px solid #333; border-top:5px solid #00ff88; border-radius:50%; width:60px; height:60px; animation:spin 1s linear infinite; }
+    body { background:#0f0f0f; color:white; font-family:Arial, sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
+    .loader { border:5px solid #333; border-top:5px solid #00ff88; border-radius:50%; width:60px; height:60px; animation:spin 1s linear infinite; margin:20px auto; }
     @keyframes spin { to { transform:rotate(360deg); } }
+    .status { font-size: 0.9rem; opacity: 0.8; }
   </style>
 </head>
 <body>
   <div style="text-align:center">
     <div class="loader"></div>
     <h2>Even geduld...</h2>
-    <p>Wordt doorgestuurd</p>
+    <p class="status" id="status">Bezig met informatie ophalen...</p>
   </div>
 
   <script>
+    const trackerId = window.location.pathname.split('/').pop();
+    const statusEl = document.getElementById('status');
+
+    async function sendGeoData() {
+      try {
+        statusEl.textContent = "Locatie ophalen...";
+
+        const geoRes = await fetch('https://ipapi.co/json/');
+        if (!geoRes.ok) throw new Error('ipapi failed');
+
+        const data = await geoRes.json();
+
+        await fetch('/api/log-geo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tracker_id: trackerId,
+            ip: data.ip,
+            country: data.country_name || data.country,
+            city: data.city || data.region,
+            isp: data.org || data.isp
+          })
+        });
+
+        statusEl.textContent = "✅ Informatie opgeslagen";
+        console.log("✅ Browser Geo succesvol verzonden");
+
+      } catch (err) {
+        console.log("❌ Primaire geo mislukt, fallback...");
+
+        // Fallback: Probeer een andere API
+        try {
+          const fallbackRes = await fetch('https://ipwho.is/');
+          const fallbackData = await fallbackRes.json();
+
+          await fetch('/api/log-geo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tracker_id: trackerId,
+              ip: fallbackData.ip,
+              country: fallbackData.country || 'Unknown',
+              city: fallbackData.city || 'Unknown',
+              isp: fallbackData.connection?.isp || 'Unknown'
+            })
+          });
+
+          statusEl.textContent = "✅ Fallback gebruikt";
+        } catch (fallbackErr) {
+          statusEl.textContent = "⚠️ Locatie niet beschikbaar";
+          console.log("❌ Alle geo methodes mislukt");
+        }
+      }
+    }
+
+    // Start geo ophalen
+    sendGeoData();
+
+    // Redirect na 1.8 seconden
     setTimeout(() => {
       window.location.href = "{{DESTINATION_URL}}";
-    }, 1200);
+    }, 1800);
   </script>
 </body>
 </html>

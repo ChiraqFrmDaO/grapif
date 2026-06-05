@@ -45,63 +45,77 @@ app.get('/', (req, res) => {
   `);
 });
 
-// === TRACKER - SIMPELE DEBUG VERSIE ===
+// === TRACKER ===
 app.get('/track/:id', async (req, res) => {
   const trackerId = req.params.id;
   let ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().replace('::ffff:', '');
-  
-  const userAgent = req.headers['user-agent'] || 'Unknown';
 
-  console.log(`🚀 TRACKER AANGEROEPEN! Tracker: ${trackerId} | IP: ${ip}`);
+  const userAgent = req.headers['user-agent'] || 'Unknown';
+  const referer = req.headers.referer || 'Direct';
 
   let destinationUrl = "https://youtube.com";
 
   try {
-    // Simpele log
+    // Destination ophalen
+    if (fs.existsSync('trackers.json')) {
+      const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
+      const tracker = trackers.find(t => t.tracker_id === trackerId);
+      if (tracker) destinationUrl = tracker.destination_url;
+    }
+
+    const parser = uaParser(userAgent);
+
     const log = {
       timestamp: new Date().toISOString(),
       tracker_id: trackerId,
       ip: ip,
-      country: 'Unknown',
-      city: 'Unknown',
-      isp: 'Unknown',
-      browser: 'Unknown',
-      os: 'Unknown',
-      useragent: userAgent
+      country: 'Fetching...',
+      city: 'Fetching...',
+      isp: 'Fetching...',
+      browser: parser.browser.name || 'Unknown',
+      os: parser.os.name || 'Unknown',
+      device: parser.device.type || 'desktop',
+      useragent: userAgent,
+      referer: referer
     };
 
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`✅ Log opgeslagen voor ${trackerId}`);
+    console.log(`✅ Tracker geladen → ${trackerId} | IP: ${ip}`);
 
   } catch (error) {
-    console.error("Fout:", error.message);
+    console.error("Tracker error:", error);
   }
 
-  // Redirect
   let html = fs.readFileSync(__dirname + '/views/redirect.html', 'utf8');
   html = html.replace("{{DESTINATION_URL}}", destinationUrl);
   res.send(html);
 });
 
+// === API: Geo data vanuit browser opslaan ===
+app.post('/api/log-geo', (req, res) => {
+  const { tracker_id, ip, country, city, isp } = req.body;
 
-// === API: Tracker opslaan ===
-app.post('/api/save-tracker', auth, (req, res) => {
-  const { tracker_id, name, destination_url } = req.body;
+  if (!tracker_id) return res.status(400).json({ error: "No tracker_id" });
 
-  if (!tracker_id || !name || !destination_url) {
-    return res.status(400).json({ error: "Missing data" });
+  try {
+    const log = {
+      timestamp: new Date().toISOString(),
+      tracker_id: tracker_id,
+      ip: ip || 'Unknown',
+      country: country || 'Unknown',
+      city: city || 'Unknown',
+      isp: isp || 'Unknown',
+      browser: 'Browser Geo',
+      os: 'Browser Geo',
+      device: 'Browser Geo'
+    };
+
+    fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
+    console.log(`📍 Browser Geo ontvangen → ${country} - ${city}`);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Save failed" });
   }
-
-  let trackers = [];
-  if (fs.existsSync('trackers.json')) {
-    trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
-  }
-
-  trackers.push({ tracker_id, name, destination_url, created_at: new Date().toISOString() });
-
-  fs.writeFileSync('trackers.json', JSON.stringify(trackers, null, 2));
-
-  res.json({ success: true, tracker_id });
 });
 
 // === ADMIN ===
