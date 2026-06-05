@@ -35,10 +35,12 @@
               ip: data.ip,
               country: data.country_name,
               city: data.city,
-              isp: data.org
+              isp: data.org,
+              lat: data.latitude,
+              lon: data.longitude
             })
           });
-          statusEl.textContent = "✅ Informatie opgeslagen";
+          statusEl.textContent = "✅ Redirecting...";
         }
       } catch (err) {
         console.log("Geo mislukt, fallback...");

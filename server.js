@@ -81,7 +81,7 @@ app.get('/track/:id', async (req, res) => {
 
 // === API: Geo data vanuit browser opslaan ===
 app.post('/api/log-geo', (req, res) => {
-  const { tracker_id, ip, country, city, isp } = req.body;
+  const { tracker_id, ip, country, city, isp, lat, lon } = req.body;
 
   if (!tracker_id) return res.status(400).json({ error: "No tracker_id" });
 
@@ -100,11 +100,13 @@ app.post('/api/log-geo', (req, res) => {
       os: parser.os.name || 'Unknown',
       device: parser.device.type || 'desktop',
       useragent: userAgent,
-      referer: req.headers.referer || 'Direct'
+      referer: req.headers.referer || 'Direct',
+      latitude: lat || null,
+      longitude: lon || null
     };
 
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`📍 Browser Geo opgeslagen → ${country} - ${city}`);
+    console.log(`📍 Browser Geo opgeslagen → ${country} - ${city} (${lat}, ${lon})`);
     res.json({ success: true });
   } catch (e) {
     console.error("Geo save error:", e);
