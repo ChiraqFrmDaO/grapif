@@ -46,6 +46,7 @@ app.get('/', (req, res) => {
 });
 
 // === TRACKER ===
+// === TRACKER ===
 app.get('/track/:id', async (req, res) => {
   const trackerId = req.params.id;
   let ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().replace('::ffff:', '');
@@ -53,22 +54,26 @@ app.get('/track/:id', async (req, res) => {
   let destinationUrl = "https://youtube.com"; // fallback
 
   try {
-    // Haal de juiste destination URL op
     if (fs.existsSync('trackers.json')) {
       const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
       const tracker = trackers.find(t => t.tracker_id === trackerId);
+      
       if (tracker && tracker.destination_url) {
         destinationUrl = tracker.destination_url;
+        console.log(`✅ Bestemming gevonden: ${destinationUrl}`);
+      } else {
+        console.log(`⚠️ Geen bestemming gevonden voor tracker: ${trackerId}`);
       }
+    } else {
+      console.log("⚠️ trackers.json bestaat niet");
     }
 
-    console.log(`🔄 Tracking link geopend → ${trackerId} | Bestemming: ${destinationUrl}`);
-
   } catch (error) {
-    console.error("Tracker error:", error);
+    console.error("Fout bij ophalen destination:", error);
   }
 
-  // HTML laden en URL vervangen
+  console.log(`🔄 Redirect naar: ${destinationUrl}`);
+
   let html = fs.readFileSync(__dirname + '/views/redirect.html', 'utf8');
   html = html.replace("{{DESTINATION_URL}}", destinationUrl);
   res.send(html);
