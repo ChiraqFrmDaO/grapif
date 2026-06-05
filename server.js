@@ -46,6 +46,7 @@ app.get('/', (req, res) => {
 });
 
 // === TRACKER ===
+// === TRACKER ===
 app.get('/track/:id', async (req, res) => {
   const trackerId = req.params.id;
   let ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().replace('::ffff:', '');
@@ -65,6 +66,7 @@ app.get('/track/:id', async (req, res) => {
 
     const parser = uaParser(userAgent);
 
+    // Alleen een "initiële" log maken (wordt later overschreven door browser geo)
     const log = {
       timestamp: new Date().toISOString(),
       tracker_id: trackerId,
@@ -76,11 +78,12 @@ app.get('/track/:id', async (req, res) => {
       os: parser.os.name || 'Unknown',
       device: parser.device.type || 'desktop',
       useragent: userAgent,
-      referer: referer
+      referer: referer,
+      source: 'initial'
     };
 
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`✅ Tracker geladen → ${trackerId} | IP: ${ip}`);
+    console.log(`🔄 Initial log aangemaakt voor ${trackerId}`);
 
   } catch (error) {
     console.error("Tracker error:", error);
@@ -107,13 +110,15 @@ app.post('/api/log-geo', (req, res) => {
       isp: isp || 'Unknown',
       browser: 'Browser Geo',
       os: 'Browser Geo',
-      device: 'Browser Geo'
+      device: 'Browser Geo',
+      source: 'browser'
     };
 
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`📍 Browser Geo ontvangen → ${country} - ${city}`);
+    console.log(`📍 Browser Geo opgeslagen → ${country} - ${city}`);
     res.json({ success: true });
   } catch (e) {
+    console.error("Geo save error:", e);
     res.status(500).json({ error: "Save failed" });
   }
 });

@@ -23,7 +23,7 @@
 
     async function sendGeoData() {
       try {
-        statusEl.textContent = "Locatie ophalen...";
+        
 
         const geoRes = await fetch('https://ipapi.co/json/');
         if (!geoRes.ok) throw new Error('ipapi failed');
@@ -42,7 +42,6 @@
           })
         });
 
-        statusEl.textContent = "✅ Informatie opgeslagen";
         console.log("✅ Browser Geo succesvol verzonden");
 
       } catch (err) {
