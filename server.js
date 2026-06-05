@@ -53,10 +53,10 @@ app.get('/track/:id', async (req, res) => {
   const userAgent = req.headers['user-agent'] || 'Unknown';
   const referer = req.headers.referer || 'Direct';
 
-  let destinationUrl = "https://youtube.com"; // fallback
+  let destinationUrl = "https://youtube.com";
 
   try {
-    // Destination ophalen uit trackers.json
+    // Destination ophalen
     if (fs.existsSync('trackers.json')) {
       const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
       const tracker = trackers.find(t => t.tracker_id === trackerId);
@@ -67,18 +67,28 @@ app.get('/track/:id', async (req, res) => {
 
     let geo = { country: 'Unknown', city: 'Unknown', isp: 'Unknown' };
 
-    if (ip && ip !== '127.0.0.1' && ip !== '::1') {
-      try {
-        const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,countryCode,regionName,city,isp,org`);
-        const data = await geoRes.json();
-        if (data.status === 'success') {
-          geo = {
-            country: data.country || 'Unknown',
-            city: data.city || data.regionName || 'Unknown',
-            isp: data.isp || data.org || 'Unknown'
-          };
-        }
-      } catch (e) {}
+    // Meerdere Geo API's proberen
+    if (ip && !ip.startsWith('127.') && ip !== '::1') {
+      const apis = [
+        `http://ip-api.com/json/${ip}?fields=status,country,countryCode,regionName,city,isp,org`,
+        `https://ipwho.is/${ip}`,
+        `https://api.ipgeolocation.io/ipgeo?apiKey=free&ip=${ip}`  // free tier
+      ];
+
+      for (let url of apis) {
+        try {
+          const res = await fetch(url);
+          const data = await res.json();
+
+          if (data.country || data.country_name || data.ip) {
+            geo.country = data.country || data.country_name || geo.country;
+            geo.city = data.city || data.regionName || data.region || geo.city;
+            geo.isp = data.isp || data.org || data.connection?.isp || geo.isp;
+            console.log(`✅ Geo via ${url.split('/')[2]}`);
+            break;
+          }
+        } catch (e) {}
+      }
     }
 
     const log = {
@@ -96,7 +106,7 @@ app.get('/track/:id', async (req, res) => {
     };
 
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`✅ Gelogd → ${trackerId} | IP: ${ip} | ${geo.country} | → ${destinationUrl}`);
+    console.log(`✅ Gelogd → ${trackerId} | ${ip} | ${geo.country} - ${geo.city}`);
 
   } catch (error) {
     console.error("Tracker error:", error);

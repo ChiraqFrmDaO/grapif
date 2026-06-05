@@ -2,35 +2,66 @@
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
-  <title>IP Logger Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShadowTrack - Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; background: #1e1e1e; color: #eee; margin: 20px; }
-    h1 { color: #00ff88; }
-    input, button { padding: 12px; margin: 8px 0; border-radius: 5px; }
-    button { background: #00ff88; color: black; font-weight: bold; cursor: pointer; }
-    .link { background: #333; padding: 12px; word-break: break-all; margin: 10px 0; border-radius: 5px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { padding: 10px; border: 1px solid #444; text-align: left; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0a0a0a, #1a0033);
+      color: #eee;
+      min-height: 100vh;
+    }
+    h1 { color: #00ff88; text-align: center; font-size: 2.8rem; margin-bottom: 10px; }
+    h2 { color: #00ccff; }
+    input, button {
+      padding: 12px;
+      margin: 8px 4px;
+      border-radius: 8px;
+      border: none;
+    }
+    button {
+      background: #00ff88;
+      color: black;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .link { background: #222; padding: 15px; border-radius: 8px; word-break: break-all; margin: 10px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: rgba(0,0,0,0.4);
+    }
+    th, td {
+      padding: 12px;
+      border: 1px solid #333;
+      text-align: left;
+    }
     th { background: #00aa66; }
   </style>
 </head>
 <body>
-  <h1>🔥 IP Logger Dashboard</h1>
+  <h1>SHADOWTRACK</h1>
+  <p style="text-align:center; opacity:0.8;">Dashboard</p>
 
   <h2>Nieuwe Tracking Link Aanmaken</h2>
   <input type="text" id="name" placeholder="Naam (bijv. TikTok video)" style="width:300px;">
   <input type="text" id="destination" placeholder="Doel URL[](https://...)" style="width:500px;">
-  <button onclick="generateLink()">✅ Link Aanmaken</button>
+  <button onclick="generateLink()">Link Aanmaken</button>
 
   <div id="result"></div>
 
   <hr>
   <h2>Laatste Logs</h2>
-  <table id="logsTable" border="1">
+  <table id="logsTable">
     <thead>
       <tr>
         <th>Tijd</th>
-        <th>Tracker ID</th>
+        <th>Tracker</th>
         <th>IP</th>
         <th>Land</th>
         <th>Stad</th>
@@ -46,44 +77,38 @@
       const destination = document.getElementById('destination').value.trim();
 
       if (!name || !destination) {
-        alert("Vul zowel naam als doel URL in!");
+        alert("Vul naam én doel URL in!");
         return;
       }
 
       const trackerId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 10);
       const fullLink = `https://${window.location.hostname}/track/${trackerId}`;
 
-      // Opslaan in trackers.json
-      const trackerData = { tracker_id: trackerId, name: name, destination_url: destination };
-
       try {
-        const res = await fetch('/api/save-tracker', {
+        await fetch('/api/save-tracker', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(trackerData)
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({tracker_id: trackerId, name, destination_url: destination})
         });
 
         document.getElementById('result').innerHTML = `
-          <p><strong>✅ Link succesvol aangemaakt!</strong></p>
+          <p><strong>✅ Link aangemaakt!</strong></p>
           <div class="link">${fullLink}</div>
           <button onclick="copyLink('${fullLink}')">Kopiëren</button>
-          <p><small>Naam: ${name}<br>Bestemming: ${destination}</small></p>
         `;
-
-        alert(`Link aangemaakt!\n\n${fullLink}`);
-      } catch (e) {
-        alert("Fout bij opslaan van link");
+      } catch(e) {
+        alert("Fout bij opslaan");
       }
     }
 
     function copyLink(link) {
       navigator.clipboard.writeText(link);
-      alert("Link gekopieerd naar klembord!");
+      alert("Gekopieerd!");
     }
 
     // Logs laden
     fetch('/api/logs')
-      .then(res => res.json())
+      .then(r => r.json())
       .then(logs => {
         const tbody = document.querySelector('#logsTable tbody');
         tbody.innerHTML = '';
@@ -98,8 +123,7 @@
           </tr>`;
           tbody.innerHTML += row;
         });
-      })
-      .catch(err => console.log("Logs laden mislukt"));
+      });
   </script>
 </body>
 </html>
