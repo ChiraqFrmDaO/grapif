@@ -50,33 +50,30 @@ app.get('/track/:id', async (req, res) => {
   const trackerId = req.params.id;
   let ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().replace('::ffff:', '');
 
-  const userAgent = req.headers['user-agent'] || 'Unknown';
-  const referer = req.headers.referer || 'Direct';
-
-  let destinationUrl = "https://youtube.com";
+  let destinationUrl = "https://youtube.com"; // fallback
 
   try {
-    // Destination ophalen
+    // Haal de juiste destination URL op
     if (fs.existsSync('trackers.json')) {
       const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
       const tracker = trackers.find(t => t.tracker_id === trackerId);
-      if (tracker) destinationUrl = tracker.destination_url;
+      if (tracker && tracker.destination_url) {
+        destinationUrl = tracker.destination_url;
+      }
     }
 
-    console.log(`🔄 Tracking link geopend → ${trackerId} | IP: ${ip}`);
-
-    // GEEN log meer maken hier (browser doet het)
+    console.log(`🔄 Tracking link geopend → ${trackerId} | Bestemming: ${destinationUrl}`);
 
   } catch (error) {
     console.error("Tracker error:", error);
   }
 
+  // HTML laden en URL vervangen
   let html = fs.readFileSync(__dirname + '/views/redirect.html', 'utf8');
   html = html.replace("{{DESTINATION_URL}}", destinationUrl);
   res.send(html);
 });
 
-// === API: Geo data vanuit browser opslaan ===
 // === API: Geo data vanuit browser opslaan ===
 app.post('/api/log-geo', (req, res) => {
   const { tracker_id, ip, country, city, isp } = req.body;
@@ -102,7 +99,7 @@ app.post('/api/log-geo', (req, res) => {
     };
 
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`📍 Browser Geo opgeslagen → ${country} - ${city} | ${parser.browser.name}`);
+    console.log(`📍 Browser Geo opgeslagen → ${country} - ${city}`);
     res.json({ success: true });
   } catch (e) {
     console.error("Geo save error:", e);
