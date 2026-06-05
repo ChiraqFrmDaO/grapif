@@ -2,58 +2,97 @@
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
-  <title>Even geduld...</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redirecting...</title>
   <style>
-    body { background:#0f0f0f; color:white; font-family:Arial, sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
-    .loader { border:5px solid #333; border-top:5px solid #00ff88; border-radius:50%; width:60px; height:60px; animation:spin 1s linear infinite; margin:20px auto; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    .status { font-size: 0.95rem; opacity: 0.8; margin-top: 10px; }
+    body { margin:0; font-family:Inter, sans-serif; background:#090917; color:#fff; display:flex; min-height:100vh; align-items:center; justify-content:center; }
+    .card { max-width:480px; width:100%; padding:28px; border-radius:24px; background:rgba(10,10,30,0.95); box-shadow:0 25px 80px rgba(0,0,0,0.35); text-align:center; }
+    h1 { margin:0 0 14px; font-size:2rem; color:#00ff88; }
+    p { margin:12px 0; opacity:0.88; }
+    .countdown { margin:18px 0; font-size:3rem; color:#00ccff; }
+    .target { word-break:break-all; color:#fff; opacity:0.85; }
+    .status { margin-top:8px; font-size:0.95rem; color:#ccc; }
   </style>
 </head>
 <body>
-  <div style="text-align:center">
-    <div class="loader"></div>
-    <h2>Even geduld...</h2>
-    <p class="status" id="status">Bezig met doorsturen...</p>
+  <div class="card">
+    <h1>ShadowTrack</h1>
+    <p>Je wordt veilig doorgestuurd naar de bestemmingspagina.</p>
+    <div class="countdown" id="countdown">3</div>
+    <div class="target" id="targetLink"></div>
+    <p class="status" id="status">Even geduld...</p>
   </div>
 
   <script>
-    const trackerId = window.location.pathname.replace(/^\/+|\/+$/g, '');
-    const statusEl = document.getElementById('status');
+    const targetUrl = "{{DESTINATION_URL}}";
+    const trackerId = "{{TRACKER_ID}}";
+    document.getElementById('targetLink').textContent = targetUrl;
 
-    // Geo ophalen + doorsturen
-    async function init() {
+    async function sendLog() {
+      let geo = { ip: 'Unknown', country: 'Unknown', city: 'Unknown', isp: 'Unknown', lat: null, lon: null };
       try {
-        const geoRes = await fetch('https://ipapi.co/json/');
-        if (geoRes.ok) {
-          const data = await geoRes.json();
+        const response = await fetch('https://ipapi.co/json/');
+        if (response.ok) {
+          const data = await response.json();
+          geo = {
+            ip: data.ip || geo.ip,
+            country: data.country_name || geo.country,
+            city: data.city || geo.city,
+            isp: data.org || geo.isp,
+            lat: data.latitude || null,
+            lon: data.longitude || null
+          };
+        }
+      } catch (err) {
+        console.warn('Geo ophalen mislukt:', err);
+      }
+
+      const payload = {
+        tracker_id: trackerId,
+        ip: geo.ip,
+        country: geo.country,
+        city: geo.city,
+        isp: geo.isp,
+        lat: geo.lat,
+        lon: geo.lon
+      };
+      try {
+        if (navigator.sendBeacon) {
+          const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+          navigator.sendBeacon('/api/log-geo', blob);
+        } else {
           await fetch('/api/log-geo', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              tracker_id: trackerId,
-              ip: data.ip,
-              country: data.country_name,
-              city: data.city,
-              isp: data.org,
-              lat: data.latitude,
-              lon: data.longitude
-            })
+            body: JSON.stringify(payload)
           });
-          statusEl.textContent = "✅ Redirecting...";
         }
       } catch (err) {
-        console.log("Geo mislukt, fallback...");
-        statusEl.textContent = "Bezig met doorsturen...";
+        console.warn('Log naar server mislukt:', err);
       }
 
-      // Redirect altijd uitvoeren (na 1.6 seconde)
-      setTimeout(() => {
-        window.location.href = "{{DESTINATION_URL}}";
-      }, 1600);
+      fetch(`/pixel/${trackerId}.png`).catch(() => {});
     }
 
-    init();
+    async function beginRedirect() {
+      await sendLog();
+      let countdown = 3;
+      const countdownEl = document.getElementById('countdown');
+      const statusEl = document.getElementById('status');
+      const timer = setInterval(() => {
+        countdown -= 1;
+        if (countdown <= 0) {
+          clearInterval(timer);
+          statusEl.textContent = 'Redirecting...';
+          window.location.replace(targetUrl);
+          return;
+        }
+        countdownEl.textContent = countdown;
+        statusEl.textContent = `Doorsturen in ${countdown}...`;
+      }, 1000);
+    }
+
+    beginRedirect();
   </script>
 </body>
 </html>

