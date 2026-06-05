@@ -45,73 +45,39 @@ app.get('/', (req, res) => {
   `);
 });
 
-// === TRACKER ===
+// === TRACKER - SIMPELE DEBUG VERSIE ===
 app.get('/track/:id', async (req, res) => {
-  // Betere IP extractie
-  let ip = req.headers['x-forwarded-for'] 
-    ? req.headers['x-forwarded-for'].split(',')[0].trim()
-    : req.socket.remoteAddress || 'Unknown';
-
-  ip = ip.replace('::ffff:', '');
-
+  const trackerId = req.params.id;
+  let ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().replace('::ffff:', '');
+  
   const userAgent = req.headers['user-agent'] || 'Unknown';
-  const referer = req.headers.referer || 'Direct';
+
+  console.log(`🚀 TRACKER AANGEROEPEN! Tracker: ${trackerId} | IP: ${ip}`);
 
   let destinationUrl = "https://youtube.com";
 
-  let geo = { country: 'Unknown', city: 'Unknown', isp: 'Unknown' };
-
   try {
-    // Destination ophalen
-    if (fs.existsSync('trackers.json')) {
-      const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
-      const tracker = trackers.find(t => t.tracker_id === req.params.id);
-      if (tracker) destinationUrl = tracker.destination_url;
-    }
-
-    const parser = uaParser(userAgent);
-
-    // Laatste poging met goede API
-    if (ip && !ip.startsWith('127.') && ip !== '::1') {
-      try {
-        // Gebruik een betrouwbaardere API
-        const response = await fetch(`https://ipapi.co/${ip}/json/`, { 
-          headers: { 'User-Agent': 'Mozilla/5.0' } 
-        });
-        const data = await response.json();
-
-        if (data && data.country_name) {
-          geo.country = data.country_name;
-          geo.city = data.city || 'Unknown';
-          geo.isp = data.org || 'Unknown';
-          console.log(`✅ Geo via ipapi.co → ${geo.country}`);
-        }
-      } catch (e) {
-        console.log("Alle geo API's mislukt");
-      }
-    }
-
+    // Simpele log
     const log = {
       timestamp: new Date().toISOString(),
-      tracker_id: req.params.id,
+      tracker_id: trackerId,
       ip: ip,
-      country: geo.country,
-      city: geo.city,
-      isp: geo.isp,
-      browser: parser.browser.name || 'Unknown',
-      os: parser.os.name || 'Unknown',
-      device: parser.device.type || 'desktop',
-      useragent: userAgent,
-      referer: referer
+      country: 'Unknown',
+      city: 'Unknown',
+      isp: 'Unknown',
+      browser: 'Unknown',
+      os: 'Unknown',
+      useragent: userAgent
     };
 
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`📍 GELogd → IP: ${ip} | ${geo.country} - ${geo.city}`);
+    console.log(`✅ Log opgeslagen voor ${trackerId}`);
 
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Fout:", error.message);
   }
 
+  // Redirect
   let html = fs.readFileSync(__dirname + '/views/redirect.html', 'utf8');
   html = html.replace("{{DESTINATION_URL}}", destinationUrl);
   res.send(html);
