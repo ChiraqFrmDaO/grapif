@@ -47,53 +47,53 @@ app.get('/', (req, res) => {
 
 // === TRACKER ===
 app.get('/track/:id', async (req, res) => {
-  const trackerId = req.params.id;
-  let ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').replace('::ffff:', '');
-  
+  // Betere IP extractie
+  let ip = req.headers['x-forwarded-for'] 
+    ? req.headers['x-forwarded-for'].split(',')[0].trim()
+    : req.socket.remoteAddress || 'Unknown';
+
+  ip = ip.replace('::ffff:', '');
+
   const userAgent = req.headers['user-agent'] || 'Unknown';
   const referer = req.headers.referer || 'Direct';
 
   let destinationUrl = "https://youtube.com";
 
+  let geo = { country: 'Unknown', city: 'Unknown', isp: 'Unknown' };
+
   try {
     // Destination ophalen
     if (fs.existsSync('trackers.json')) {
       const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
-      const tracker = trackers.find(t => t.tracker_id === trackerId);
+      const tracker = trackers.find(t => t.tracker_id === req.params.id);
       if (tracker) destinationUrl = tracker.destination_url;
     }
 
     const parser = uaParser(userAgent);
 
-    let geo = { country: 'Unknown', city: 'Unknown', isp: 'Unknown' };
-
-    // Meerdere Geo API's proberen
+    // Laatste poging met goede API
     if (ip && !ip.startsWith('127.') && ip !== '::1') {
-      const apis = [
-        `http://ip-api.com/json/${ip}?fields=status,country,countryCode,regionName,city,isp,org`,
-        `https://ipwho.is/${ip}`,
-        `https://api.ipgeolocation.io/ipgeo?apiKey=free&ip=${ip}`  // free tier
-      ];
+      try {
+        // Gebruik een betrouwbaardere API
+        const response = await fetch(`https://ipapi.co/${ip}/json/`, { 
+          headers: { 'User-Agent': 'Mozilla/5.0' } 
+        });
+        const data = await response.json();
 
-      for (let url of apis) {
-        try {
-          const res = await fetch(url);
-          const data = await res.json();
-
-          if (data.country || data.country_name || data.ip) {
-            geo.country = data.country || data.country_name || geo.country;
-            geo.city = data.city || data.regionName || data.region || geo.city;
-            geo.isp = data.isp || data.org || data.connection?.isp || geo.isp;
-            console.log(`✅ Geo via ${url.split('/')[2]}`);
-            break;
-          }
-        } catch (e) {}
+        if (data && data.country_name) {
+          geo.country = data.country_name;
+          geo.city = data.city || 'Unknown';
+          geo.isp = data.org || 'Unknown';
+          console.log(`✅ Geo via ipapi.co → ${geo.country}`);
+        }
+      } catch (e) {
+        console.log("Alle geo API's mislukt");
       }
     }
 
     const log = {
       timestamp: new Date().toISOString(),
-      tracker_id: trackerId,
+      tracker_id: req.params.id,
       ip: ip,
       country: geo.country,
       city: geo.city,
@@ -106,16 +106,17 @@ app.get('/track/:id', async (req, res) => {
     };
 
     fs.appendFileSync('logs.txt', JSON.stringify(log) + '\n');
-    console.log(`✅ Gelogd → ${trackerId} | ${ip} | ${geo.country} - ${geo.city}`);
+    console.log(`📍 GELogd → IP: ${ip} | ${geo.country} - ${geo.city}`);
 
   } catch (error) {
-    console.error("Tracker error:", error);
+    console.error("Error:", error);
   }
 
   let html = fs.readFileSync(__dirname + '/views/redirect.html', 'utf8');
   html = html.replace("{{DESTINATION_URL}}", destinationUrl);
   res.send(html);
 });
+
 
 // === API: Tracker opslaan ===
 app.post('/api/save-tracker', auth, (req, res) => {
