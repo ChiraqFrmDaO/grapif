@@ -6,26 +6,36 @@
   <style>
     body { font-family: Arial, sans-serif; background: #1e1e1e; color: #eee; margin: 20px; }
     h1 { color: #00ff88; }
-    input, button { padding: 10px; margin: 8px 0; border-radius: 5px; }
+    input, button { padding: 12px; margin: 8px 0; border-radius: 5px; }
     button { background: #00ff88; color: black; font-weight: bold; cursor: pointer; }
-    .link { background: #333; padding: 10px; word-break: break-all; margin: 10px 0; }
+    .link { background: #333; padding: 12px; word-break: break-all; margin: 10px 0; border-radius: 5px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 10px; border: 1px solid #444; text-align: left; }
+    th { background: #00aa66; }
   </style>
 </head>
 <body>
   <h1>🔥 IP Logger Dashboard</h1>
 
   <h2>Nieuwe Tracking Link Aanmaken</h2>
-  <input type="text" id="name" placeholder="Naam van de link (bijv. TikTok)" style="width:300px;">
+  <input type="text" id="name" placeholder="Naam (bijv. TikTok video)" style="width:300px;">
   <input type="text" id="destination" placeholder="Doel URL[](https://...)" style="width:500px;">
-  <button onclick="generateLink()">Link Aanmaken</button>
+  <button onclick="generateLink()">✅ Link Aanmaken</button>
 
   <div id="result"></div>
 
   <hr>
   <h2>Laatste Logs</h2>
-  <table id="logsTable" border="1" style="width:100%; border-collapse: collapse;">
+  <table id="logsTable" border="1">
     <thead>
-      <tr><th>Tijd</th><th>Tracker</th><th>IP</th><th>Land</th><th>Stad</th><th>Browser/OS</th></tr>
+      <tr>
+        <th>Tijd</th>
+        <th>Tracker ID</th>
+        <th>IP</th>
+        <th>Land</th>
+        <th>Stad</th>
+        <th>Browser / OS</th>
+      </tr>
     </thead>
     <tbody></tbody>
   </table>
@@ -33,29 +43,42 @@
   <script>
     async function generateLink() {
       const name = document.getElementById('name').value.trim();
-      const dest = document.getElementById('destination').value.trim();
+      const destination = document.getElementById('destination').value.trim();
 
-      if (!name || !dest) {
-        alert("Vul beide velden in!");
+      if (!name || !destination) {
+        alert("Vul zowel naam als doel URL in!");
         return;
       }
 
-      const trackerId = Math.random().toString(36).substring(2, 15);
+      const trackerId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 10);
       const fullLink = `https://${window.location.hostname}/track/${trackerId}`;
 
-      document.getElementById('result').innerHTML = `
-        <p><strong>Link aangemaakt!</strong></p>
-        <div class="link">${fullLink}</div>
-        <button onclick="copyLink('${fullLink}')">Kopiëren</button>
-        <p><small>Bestemming: ${dest}</small></p>
-      `;
+      // Opslaan in trackers.json
+      const trackerData = { tracker_id: trackerId, name: name, destination_url: destination };
 
-      alert(`Link aangemaakt!\n\n${fullLink}\n\nJe kan hem nu gebruiken.`);
+      try {
+        const res = await fetch('/api/save-tracker', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(trackerData)
+        });
+
+        document.getElementById('result').innerHTML = `
+          <p><strong>✅ Link succesvol aangemaakt!</strong></p>
+          <div class="link">${fullLink}</div>
+          <button onclick="copyLink('${fullLink}')">Kopiëren</button>
+          <p><small>Naam: ${name}<br>Bestemming: ${destination}</small></p>
+        `;
+
+        alert(`Link aangemaakt!\n\n${fullLink}`);
+      } catch (e) {
+        alert("Fout bij opslaan van link");
+      }
     }
 
     function copyLink(link) {
       navigator.clipboard.writeText(link);
-      alert("Link gekopieerd!");
+      alert("Link gekopieerd naar klembord!");
     }
 
     // Logs laden
@@ -75,7 +98,8 @@
           </tr>`;
           tbody.innerHTML += row;
         });
-      });
+      })
+      .catch(err => console.log("Logs laden mislukt"));
   </script>
 </body>
 </html>
