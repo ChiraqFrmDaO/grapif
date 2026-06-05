@@ -112,6 +112,51 @@ app.post('/api/log-geo', (req, res) => {
   }
 });
 
+// === API: Tracker opslaan ===
+app.post('/api/save-tracker', auth, (req, res) => {
+  const { tracker_id, name, destination_url } = req.body;
+
+  if (!tracker_id || !name || !destination_url) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+    let trackers = [];
+    if (fs.existsSync('trackers.json')) {
+      trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
+    }
+
+    // Check if tracker already exists
+    const existingIndex = trackers.findIndex(t => t.tracker_id === tracker_id);
+    if (existingIndex >= 0) {
+      trackers[existingIndex] = { tracker_id, name, destination_url, created_at: trackers[existingIndex].created_at, updated_at: new Date().toISOString() };
+    } else {
+      trackers.push({ tracker_id, name, destination_url, created_at: new Date().toISOString() });
+    }
+
+    fs.writeFileSync('trackers.json', JSON.stringify(trackers, null, 2));
+    console.log(`✅ Tracker opgeslagen: ${tracker_id}`);
+    res.json({ success: true, tracker_id, link: `/track/${tracker_id}` });
+  } catch (e) {
+    console.error("Save tracker error:", e);
+    res.status(500).json({ error: "Save failed" });
+  }
+});
+
+// === API: Trackers ophalen ===
+app.get('/api/trackers', auth, (req, res) => {
+  try {
+    if (fs.existsSync('trackers.json')) {
+      const trackers = JSON.parse(fs.readFileSync('trackers.json', 'utf8'));
+      res.json(trackers);
+    } else {
+      res.json([]);
+    }
+  } catch (e) {
+    res.status(500).json({ error: "Load failed" });
+  }
+});
+
 // === ADMIN ===
 app.get('/admin', auth, (req, res) => {
   res.sendFile(__dirname + '/views/admin.html');
