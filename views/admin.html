@@ -35,7 +35,8 @@
     .tracker-card h3 { margin: 0; color: #e2e8f0; font-size: 1.05rem; }
     .tracker-card small { color: #94a3b8; display: block; word-break: break-word; }
     .tracker-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
-    .tracker-actions button { flex: 1 1 auto; }
+    .tracker-actions button { flex: 1 1 auto; min-width: 120px; }
+    button.secondary, button.danger { min-width: 110px; }
     .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: end; }
     .form-row.full { grid-template-columns: 1fr; }
     .field-group { display: grid; gap: 12px; }
@@ -310,9 +311,9 @@
               <div><strong>ID:</strong> ${tracker.tracker_id}</div>
               <div><strong>Bestemming:</strong> <small>${tracker.destination_url}</small></div>
               <div><strong>Link:</strong> <small>${url}</small></div>
-              <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
-                <button class="secondary" onclick="window.open('${url}', '_blank')">Open</button>
-                <button class="danger" onclick="deleteTracker('${tracker.tracker_id}', decodeURIComponent('${encodeURIComponent(tracker.name)}'))">Verwijderen</button>
+              <div class="tracker-actions">
+                <button type="button" class="secondary" onclick="window.open('${url}', '_blank')">Open</button>
+                <button type="button" class="danger" onclick="deleteTracker('${tracker.tracker_id}', decodeURIComponent('${encodeURIComponent(tracker.name)}'))">Verwijderen</button>
               </div>
             </div>
           `;
