@@ -31,6 +31,25 @@ function getClientIp(req) {
   return ip.replace(/^::ffff:/, '') || 'Unknown';
 }
 
+function isBotUserAgent(userAgent) {
+  const ua = (userAgent || '').toLowerCase();
+  if (!ua || ua === 'unknown') return true;
+
+  const botKeywords = [
+    'bot', 'crawl', 'spider', 'slurp', 'fetch', 'scanner', 'monitor',
+    'python-requests', 'libwww-perl', 'curl', 'wget', 'httpclient', 'okhttp',
+    'facebookexternalhit', 'facebot', 'discordbot', 'slackbot', 'telegrambot',
+    'ahrefsbot', 'semrushbot', 'mj12bot', 'rogerbot', 'yandex', 'bingpreview',
+    'googlebot', 'bingbot', 'baiduspider', 'pinterest', 'preview'
+  ];
+
+  return botKeywords.some(keyword => ua.includes(keyword));
+}
+
+function isBotLog(log) {
+  return isBotUserAgent(log.useragent) || isBotUserAgent(log.browser) || isBotUserAgent(log.os);
+}
+
 async function initDatabase() {
   if (!process.env.DATABASE_URL) {
     console.log('⚠️ Geen DATABASE_URL gevonden, gebruik fallback file storage.');
@@ -166,28 +185,38 @@ async function appendLog(log) {
   fs.appendFileSync(LOG_FILE, JSON.stringify(log) + '\n');
 }
 
-async function getLogs() {
+async function getLogs(limit = MAX_LOG_ROWS) {
   if (useDb) {
-    const { rows } = await pool.query('SELECT * FROM logs ORDER BY timestamp DESC LIMIT $1', [MAX_LOG_ROWS]);
-    return rows;
+    const query = limit > 0
+      ? 'SELECT * FROM logs ORDER BY timestamp DESC LIMIT $1'
+      : 'SELECT * FROM logs ORDER BY timestamp DESC';
+    const { rows } = limit > 0 ? await pool.query(query, [limit]) : await pool.query(query);
+    return rows.filter(row => !isBotLog(row));
   }
 
   if (!fs.existsSync(LOG_FILE)) return [];
-  const data = fs.readFileSync(LOG_FILE, 'utf8');
-  return data.trim().split('\n').filter(Boolean).map(line => {
-    try { return JSON.parse(line); } catch { return null; }
-  }).filter(Boolean).reverse();
+  const rawLogs = fs.readFileSync(LOG_FILE, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(line => {
+      try { return JSON.parse(line); } catch { return null; }
+    })
+    .filter(Boolean)
+    .filter(log => !isBotLog(log));
+
+  return limit > 0 ? rawLogs.slice(-limit).reverse() : rawLogs.reverse();
 }
 
 async function getSummary() {
   if (useDb) {
     const trackerCount = await pool.query('SELECT COUNT(*) FROM trackers');
-    const visitCount = await pool.query('SELECT COUNT(*) FROM logs');
-    const uniqueCount = await pool.query('SELECT COUNT(DISTINCT ip) FROM logs');
+    const logs = await getLogs(0);
+    const uniqueIps = new Set(logs.map(l => l.ip).filter(Boolean));
     return {
       totalTrackers: parseInt(trackerCount.rows[0].count, 10),
-      totalVisits: parseInt(visitCount.rows[0].count, 10),
-      uniqueVisits: parseInt(uniqueCount.rows[0].count, 10)
+      totalVisits: logs.length,
+      uniqueVisits: uniqueIps.size
     };
   }
 
@@ -259,25 +288,29 @@ app.get('/pixel/:trackerId.png', async (req, res) => {
   try {
     const tracker = await loadTrackerById(req.params.trackerId);
     const userAgent = req.headers['user-agent'] || 'Unknown';
-    const parser = uaParser(userAgent);
-    const log = {
-      timestamp: new Date().toISOString(),
-      tracker_id: req.params.trackerId,
-      tracker_name: tracker?.name || 'Onbekend',
-      ip: getClientIp(req),
-      country: 'Unknown',
-      city: 'Unknown',
-      isp: 'Unknown',
-      browser: parser.browser.name || 'Unknown',
-      os: parser.os.name || 'Unknown',
-      device: parser.device.type || 'desktop',
-      useragent: userAgent,
-      referer: req.headers.referer || 'None',
-      latitude: null,
-      longitude: null,
-      is_pixel: true
-    };
-    await appendLog(log);
+    if (isBotUserAgent(userAgent)) {
+      console.log('🚫 Bot pixel ignored:', userAgent);
+    } else {
+      const parser = uaParser(userAgent);
+      const log = {
+        timestamp: new Date().toISOString(),
+        tracker_id: req.params.trackerId,
+        tracker_name: tracker?.name || 'Onbekend',
+        ip: getClientIp(req),
+        country: 'Unknown',
+        city: 'Unknown',
+        isp: 'Unknown',
+        browser: parser.browser.name || 'Unknown',
+        os: parser.os.name || 'Unknown',
+        device: parser.device.type || 'desktop',
+        useragent: userAgent,
+        referer: req.headers.referer || 'None',
+        latitude: null,
+        longitude: null,
+        is_pixel: true
+      };
+      await appendLog(log);
+    }
   } catch (error) {
     console.error('Pixel logging error:', error);
   }
@@ -294,6 +327,11 @@ app.post('/api/log-geo', async (req, res) => {
 
   try {
     const userAgent = req.headers['user-agent'] || 'Unknown';
+    if (isBotUserAgent(userAgent)) {
+      console.log('🚫 Bot geo log ignored:', userAgent);
+      return res.json({ success: true });
+    }
+
     const parser = uaParser(userAgent);
     const tracker = await loadTrackerById(tracker_id);
 
