@@ -258,6 +258,8 @@ app.get('/track/:id', async (req, res) => {
 app.get('/pixel/:trackerId.png', async (req, res) => {
   try {
     const tracker = await loadTrackerById(req.params.trackerId);
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+    const parser = uaParser(userAgent);
     const log = {
       timestamp: new Date().toISOString(),
       tracker_id: req.params.trackerId,
@@ -266,10 +268,10 @@ app.get('/pixel/:trackerId.png', async (req, res) => {
       country: 'Unknown',
       city: 'Unknown',
       isp: 'Unknown',
-      browser: 'Pixel',
-      os: 'Pixel',
-      device: 'Pixel',
-      useragent: req.headers['user-agent'] || 'Unknown',
+      browser: parser.browser.name || 'Unknown',
+      os: parser.os.name || 'Unknown',
+      device: parser.device.type || 'desktop',
+      useragent: userAgent,
       referer: req.headers.referer || 'None',
       latitude: null,
       longitude: null,
