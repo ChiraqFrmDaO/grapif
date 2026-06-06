@@ -152,7 +152,7 @@
   <div id="detailModal" class="modal">
     <div class="modal-content">
       <div class="modal-header">
-        <h2>Log Details</h2>
+        <h2 id="detailModalTitle">Details</h2>
         <button class="close-btn" onclick="closeModal()">×</button>
       </div>
       <div id="detailContent"></div>
@@ -238,7 +238,9 @@
 
     function showDetails(logIndex) {
       const log = allLogs[logIndex];
-      const hasCoords = log.latitude && log.longitude;
+      const hasCoords = log.latitude != null && log.latitude !== '' && log.longitude != null && log.longitude !== '';
+
+      document.getElementById('detailModalTitle').textContent = 'Log Details';
 
       let html = `
         <div class="detail-grid">
@@ -269,17 +271,38 @@
 
       if (hasCoords) {
         setTimeout(() => {
-          if (currentMap) currentMap.remove();
-          currentMap = L.map('map').setView([log.latitude, log.longitude], 10);
+          if (currentMap) {
+            currentMap.remove();
+            currentMap = null;
+          }
+          currentMap = L.map('map').setView([parseFloat(log.latitude), parseFloat(log.longitude)], 10);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(currentMap);
-          L.marker([log.latitude, log.longitude]).addTo(currentMap).bindPopup(`${log.city}, ${log.country}`);
-        }, 100);
+          L.marker([parseFloat(log.latitude), parseFloat(log.longitude)]).addTo(currentMap).bindPopup(`${log.city}, ${log.country}`);
+          currentMap.invalidateSize();
+        }, 150);
       }
+    }
+
+    function showTrackerDetails(trackerId, trackerName, destinationUrl) {
+      const url = `${window.location.origin}/${trackerId}`;
+      document.getElementById('detailModalTitle').textContent = 'Tracker Details';
+      document.getElementById('detailContent').innerHTML = `
+        <div class="detail-grid">
+          <div class="detail-item"><strong>Tracker Naam:</strong><br>${trackerName}</div>
+          <div class="detail-item"><strong>ID:</strong><br>${trackerId}</div>
+          <div class="detail-item"><strong>Bestemming:</strong><br><a href="${destinationUrl}" target="_blank" style="color:#38bdf8;text-decoration:none;">${destinationUrl}</a></div>
+          <div class="detail-item"><strong>Link:</strong><br><a href="${url}" target="_blank" style="color:#38bdf8;text-decoration:none;">${url}</a></div>
+        </div>
+      `;
+      document.getElementById('detailModal').classList.add('active');
     }
 
     function closeModal() {
       document.getElementById('detailModal').classList.remove('active');
-      if (currentMap) currentMap.remove();
+      if (currentMap) {
+        currentMap.remove();
+        currentMap = null;
+      }
     }
 
     async function loadSummary() {
@@ -313,6 +336,7 @@
               <div><strong>Link:</strong> <small>${url}</small></div>
               <div class="tracker-actions">
                 <button type="button" class="secondary" onclick="window.open('${url}', '_blank')">Open</button>
+                <button type="button" class="secondary" onclick="showTrackerDetails('${tracker.tracker_id}', decodeURIComponent('${encodeURIComponent(tracker.name)}'), decodeURIComponent('${encodeURIComponent(tracker.destination_url)}'))">Details</button>
                 <button type="button" class="danger" onclick="deleteTracker('${tracker.tracker_id}', decodeURIComponent('${encodeURIComponent(tracker.name)}'))">Verwijderen</button>
               </div>
             </div>
