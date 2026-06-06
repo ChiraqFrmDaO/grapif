@@ -34,8 +34,8 @@
     .tracker-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(148,163,184,0.12); border-radius: 18px; padding: 18px; display: grid; gap: 10px; }
     .tracker-card h3 { margin: 0; color: #e2e8f0; font-size: 1.05rem; }
     .tracker-card small { color: #94a3b8; display: block; word-break: break-word; }
-    .tracker-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
-    .tracker-actions button { flex: 1 1 auto; min-width: 120px; }
+    .tracker-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; justify-content: flex-start; }
+    .tracker-actions button { flex: none; min-width: 120px; }
     button.secondary, button.danger { min-width: 110px; }
     .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: end; }
     .form-row.full { grid-template-columns: 1fr; }
@@ -236,11 +236,11 @@
     document.getElementById('domainPreset').addEventListener('change', updateDomainInput);
     updateDomainInput();
 
-    function showDetails(logIndex) {
+    function showLogDetails(logIndex) {
       const log = allLogs[logIndex];
       const hasCoords = log.latitude != null && log.latitude !== '' && log.longitude != null && log.longitude !== '';
 
-      document.getElementById('detailModalTitle').textContent = 'Log Details';
+      document.getElementById('detailModalTitle').textContent = 'Logdetails';
 
       let html = `
         <div class="detail-grid">
@@ -283,17 +283,42 @@
       }
     }
 
-    function showTrackerDetails(trackerId, trackerName, destinationUrl) {
-      const url = `${window.location.origin}/${trackerId}`;
-      document.getElementById('detailModalTitle').textContent = 'Tracker Details';
-      document.getElementById('detailContent').innerHTML = `
+    async function showTrackerLogDetails(trackerId, trackerName) {
+      if (!allLogs.length) {
+        await loadLogs();
+      }
+
+      const filteredLogs = allLogs
+        .map((log, idx) => ({ log, idx }))
+        .filter(entry => entry.log.tracker_id === trackerId);
+
+      document.getElementById('detailModalTitle').textContent = 'Logdetails';
+
+      let html = `
         <div class="detail-grid">
           <div class="detail-item"><strong>Tracker Naam:</strong><br>${trackerName}</div>
-          <div class="detail-item"><strong>ID:</strong><br>${trackerId}</div>
-          <div class="detail-item"><strong>Bestemming:</strong><br><a href="${destinationUrl}" target="_blank" style="color:#38bdf8;text-decoration:none;">${destinationUrl}</a></div>
-          <div class="detail-item"><strong>Link:</strong><br><a href="${url}" target="_blank" style="color:#38bdf8;text-decoration:none;">${url}</a></div>
+          <div class="detail-item"><strong>Tracker ID:</strong><br>${trackerId}</div>
+          <div class="detail-item"><strong>Logrecords:</strong><br>${filteredLogs.length}</div>
         </div>
       `;
+
+      if (filteredLogs.length) {
+        html += `<div class="detail-item" style="grid-column:1/-1; padding:16px; background:rgba(148,163,184,0.08); border-radius:14px;">
+            <strong>Recent logs</strong>
+            ${filteredLogs.map(entry => `
+              <div style="margin-top:14px; padding:12px; border:1px solid rgba(148,163,184,0.14); border-radius:12px;">
+                <div><strong>${new Date(entry.log.timestamp).toLocaleString('nl-NL')}</strong></div>
+                <div style="margin-top:6px;">${entry.log.ip} · ${entry.log.city || 'Onbekend'}, ${entry.log.country || 'Onbekend'}</div>
+                <div style="margin-top:6px;">${entry.log.browser || 'Onbekend'} / ${entry.log.os || 'Onbekend'}</div>
+                <button class="secondary" style="margin-top:10px;" onclick="showLogDetails(${entry.idx})">Bekijk logdetails</button>
+              </div>
+            `).join('')}
+          </div>`;
+      } else {
+        html += `<div class="detail-item" style="grid-column:1/-1;">Geen logs gevonden voor deze tracker.</div>`;
+      }
+
+      document.getElementById('detailContent').innerHTML = html;
       document.getElementById('detailModal').classList.add('active');
     }
 
@@ -336,7 +361,7 @@
               <div><strong>Link:</strong> <small>${url}</small></div>
               <div class="tracker-actions">
                 <button type="button" class="secondary" onclick="window.open('${url}', '_blank')">Open</button>
-                <button type="button" class="secondary" onclick="showTrackerDetails('${tracker.tracker_id}', decodeURIComponent('${encodeURIComponent(tracker.name)}'), decodeURIComponent('${encodeURIComponent(tracker.destination_url)}'))">Details</button>
+                <button type="button" class="secondary" onclick="showTrackerLogDetails('${tracker.tracker_id}', decodeURIComponent('${encodeURIComponent(tracker.name)}'))">Logdetails</button>
                 <button type="button" class="danger" onclick="deleteTracker('${tracker.tracker_id}', decodeURIComponent('${encodeURIComponent(tracker.name)}'))">Verwijderen</button>
               </div>
             </div>
@@ -363,12 +388,14 @@
             <td>${log.country}</td>
             <td>${log.city}</td>
             <td>${log.browser} / ${log.os}</td>
-            <td><button class="secondary" onclick="showDetails(${idx})">📍 Details</button></td>
+            <td><button class="secondary" onclick="showLogDetails(${idx})">📍 Logdetails</button></td>
           </tr>`;
           tbody.innerHTML += row;
         });
+        return logs;
       } catch (error) {
         console.error('Logs load error:', error);
+        return [];
       }
     }
 
