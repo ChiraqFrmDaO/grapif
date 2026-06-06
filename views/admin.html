@@ -22,6 +22,8 @@
     button:hover { background: #22c55e; }
     button.secondary { background: #64748b; color: #f8fafc; }
     button.secondary:hover { background: #475569; }
+    button.danger { background: #ef4444; color: white; }
+    button.danger:hover { background: #dc2626; }
     .link { background: #0f172a; padding: 16px; border-radius: 14px; word-break: break-all; margin: 20px 0; border: 1px solid rgba(148,163,184,0.12); }
     .link a { color: #38bdf8; text-decoration: none; }
     table { width: 100%; border-collapse: collapse; margin-top: 16px; background: transparent; }
@@ -277,6 +279,10 @@
               <div><strong>ID:</strong> ${tracker.tracker_id}</div>
               <div><strong>Bestemming:</strong> <small>${tracker.destination_url}</small></div>
               <div><strong>Link:</strong> <small>${url}</small></div>
+              <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="secondary" onclick="window.open('${url}', '_blank')">Open</button>
+                <button class="danger" onclick="deleteTracker('${tracker.tracker_id}', decodeURIComponent('${encodeURIComponent(tracker.name)}'))">Verwijderen</button>
+              </div>
             </div>
           `;
         }).join('');
@@ -285,12 +291,10 @@
       }
     }
 
-    loadSummary();
-    loadTrackersList();
-
-    fetch('/api/logs')
-      .then(r => r.json())
-      .then(logs => {
+    async function loadLogs() {
+      try {
+        const res = await fetch('/api/logs');
+        const logs = await res.json();
         allLogs = logs;
         const tbody = document.querySelector('#logsTable tbody');
         tbody.innerHTML = '';
@@ -304,11 +308,43 @@
             <td>${log.city}</td>
             <td>${log.browser} / ${log.os}</td>
             <td><button class="secondary" onclick="showDetails(${idx})">📍 Details</button></td>
-
           </tr>`;
           tbody.innerHTML += row;
         });
-      });
+      } catch (error) {
+        console.error('Logs load error:', error);
+      }
+    }
+
+    async function deleteTracker(trackerId, trackerName) {
+      if (!confirm(`Weet je zeker dat je tracker "${trackerName}" wilt verwijderen? Deze actie verwijdert ook de bijbehorende logs.`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/delete-tracker', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ tracker_id: trackerId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          await loadSummary();
+          await loadTrackersList();
+          await loadLogs();
+          alert('Tracker verwijderd');
+        } else {
+          alert('Verwijderen mislukt');
+        }
+      } catch (error) {
+        console.error('Delete tracker error:', error);
+        alert('Verwijderen mislukt');
+      }
+    }
+
+    loadSummary();
+    loadTrackersList();
+    loadLogs();
 
     document.getElementById('detailModal').addEventListener('click', (e) => {
       if (e.target.id === 'detailModal') closeModal();

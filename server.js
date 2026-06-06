@@ -156,6 +156,33 @@ async function saveTracker({ tracker_id, name, destination_url }) {
   writeTrackersFile(trackers);
 }
 
+async function deleteTrackerById(trackerId) {
+  if (useDb) {
+    await pool.query('DELETE FROM logs WHERE tracker_id = $1', [trackerId]);
+    await pool.query('DELETE FROM trackers WHERE tracker_id = $1', [trackerId]);
+    return;
+  }
+
+  const trackers = await readTrackersFile();
+  const filteredTrackers = trackers.filter(t => t.tracker_id !== trackerId);
+  if (filteredTrackers.length !== trackers.length) {
+    writeTrackersFile(filteredTrackers);
+  }
+
+  if (!fs.existsSync(LOG_FILE)) return;
+  const rawLogs = fs.readFileSync(LOG_FILE, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(line => {
+      try { return JSON.parse(line); } catch { return null; }
+    })
+    .filter(Boolean)
+    .filter(log => log.tracker_id !== trackerId);
+
+  fs.writeFileSync(LOG_FILE, rawLogs.map(log => JSON.stringify(log)).join('\n') + (rawLogs.length ? '\n' : ''));
+}
+
 async function appendLog(log) {
   if (useDb) {
     await pool.query(`
@@ -385,6 +412,22 @@ app.get('/api/trackers', auth, async (req, res) => {
   } catch (error) {
     console.error('Load trackers error:', error);
     res.status(500).json({ error: 'Load failed' });
+  }
+});
+
+app.post('/api/delete-tracker', auth, async (req, res) => {
+  const { tracker_id } = req.body;
+  if (!tracker_id) {
+    return res.status(400).json({ error: 'Missing tracker_id' });
+  }
+
+  try {
+    await deleteTrackerById(tracker_id);
+    console.log(`🗑️ Tracker verwijderd: ${tracker_id}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete tracker error:', error);
+    res.status(500).json({ error: 'Delete failed' });
   }
 });
 
