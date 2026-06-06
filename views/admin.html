@@ -288,37 +288,21 @@
         await loadLogs();
       }
 
-      const filteredLogs = allLogs
-        .map((log, idx) => ({ log, idx }))
-        .filter(entry => entry.log.tracker_id === trackerId);
+      const logIndex = allLogs.findIndex(log => log.tracker_id === trackerId);
+      if (logIndex >= 0) {
+        showLogDetails(logIndex);
+        return;
+      }
 
       document.getElementById('detailModalTitle').textContent = 'Logdetails';
-
-      let html = `
+      document.getElementById('detailContent').innerHTML = `
         <div class="detail-grid">
           <div class="detail-item"><strong>Tracker Naam:</strong><br>${trackerName}</div>
           <div class="detail-item"><strong>Tracker ID:</strong><br>${trackerId}</div>
-          <div class="detail-item"><strong>Logrecords:</strong><br>${filteredLogs.length}</div>
+          <div class="detail-item"><strong>Logrecords:</strong><br>0</div>
         </div>
+        <div class="detail-item" style="grid-column:1/-1;">Geen logs gevonden voor deze tracker.</div>
       `;
-
-      if (filteredLogs.length) {
-        html += `<div class="detail-item" style="grid-column:1/-1; padding:16px; background:rgba(148,163,184,0.08); border-radius:14px;">
-            <strong>Recent logs</strong>
-            ${filteredLogs.map(entry => `
-              <div style="margin-top:14px; padding:12px; border:1px solid rgba(148,163,184,0.14); border-radius:12px;">
-                <div><strong>${new Date(entry.log.timestamp).toLocaleString('nl-NL')}</strong></div>
-                <div style="margin-top:6px;">${entry.log.ip} · ${entry.log.city || 'Onbekend'}, ${entry.log.country || 'Onbekend'}</div>
-                <div style="margin-top:6px;">${entry.log.browser || 'Onbekend'} / ${entry.log.os || 'Onbekend'}</div>
-                <button class="secondary" style="margin-top:10px;" onclick="showLogDetails(${entry.idx})">Bekijk logdetails</button>
-              </div>
-            `).join('')}
-          </div>`;
-      } else {
-        html += `<div class="detail-item" style="grid-column:1/-1;">Geen logs gevonden voor deze tracker.</div>`;
-      }
-
-      document.getElementById('detailContent').innerHTML = html;
       document.getElementById('detailModal').classList.add('active');
     }
 
