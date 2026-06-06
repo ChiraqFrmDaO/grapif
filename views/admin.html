@@ -284,11 +284,8 @@
     }
 
     async function showTrackerLogDetails(trackerId, trackerName) {
-      if (!allLogs.length) {
-        await loadLogs();
-      }
-
-      const logIndex = allLogs.findIndex(log => log.tracker_id === trackerId);
+      const logs = await loadLogs();
+      const logIndex = logs.findIndex(log => log.tracker_id === trackerId);
       if (logIndex >= 0) {
         showLogDetails(logIndex);
         return;
