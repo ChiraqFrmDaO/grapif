@@ -169,7 +169,7 @@
 
     <div id="error" class="error"></div>
 
-    <form onsubmit="handleLogin(event)">
+    <form action="/api/login" method="post" onsubmit="return handleLogin(event)">
       <div class="field">
         <label for="username">Gebruikersnaam</label>
         <input type="text" id="username" name="username" required autofocus>
@@ -220,6 +220,7 @@
         submitBtn.disabled = false;
         submitBtn.textContent = 'Inloggen';
       }
+      return false;
     }
   </script>
 </body>
