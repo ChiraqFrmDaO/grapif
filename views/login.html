@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShadowTrack — Login</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@600;800&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #07080f;
+      --surface:  #0d0f1d;
+      --border:   rgba(148,163,184,.12);
+      --text:     #dde2ef;
+      --muted:    #64748b;
+      --accent:   #38bdf8;
+      --red:      #ef4444;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: -40%;
+      background:
+        radial-gradient(ellipse at 25% 35%, rgba(0,255,136,.08) 0%, transparent 55%),
+        radial-gradient(ellipse at 75% 65%, rgba(0,204,255,.06) 0%, transparent 55%);
+      animation: breathe 8s ease-in-out infinite alternate;
+      pointer-events: none;
+    }
+    @keyframes breathe {
+      from { opacity: .6; transform: scale(1); }
+      to   { opacity: .9; transform: scale(1.05); }
+    }
+
+    .login-box {
+      position: relative;
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 40px;
+      box-shadow: 0 32px 80px rgba(0,0,0,.5);
+      animation: slideUp .6s cubic-bezier(.22,1,.36,1) both;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.8rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      background: linear-gradient(90deg, #00ff88, #00ccff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .subtitle {
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 32px;
+      letter-spacing: .06em;
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color .15s, background .15s;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      background: rgba(255,255,255,.06);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 11px;
+      border: none;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .12s;
+      letter-spacing: .05em;
+      background: linear-gradient(135deg, #00ff88, #00ccff);
+      color: #0b1219;
+    }
+
+    .btn:hover:not(:disabled) {
+      opacity: .9;
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .error {
+      display: none;
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      background: rgba(239,68,68,.1);
+      border: 1px solid rgba(239,68,68,.3);
+      border-radius: 10px;
+      font-size: 0.85rem;
+      color: var(--red);
+      text-align: center;
+    }
+
+    .error.show {
+      display: block;
+      animation: shake .3s;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-4px); }
+      75% { transform: translateX(4px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <h1>SHADOWTRACK</h1>
+    <p class="subtitle">Dashboard Login</p>
+
+    <div id="error" class="error"></div>
+
+    <form id="loginForm" action="/api/login" method="post">
+      <div class="field">
+        <label for="username">Gebruikersnaam</label>
+        <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+      </div>
+
+      <div class="field">
+        <label for="password">Wachtwoord</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+
+      <button type="submit" class="btn" id="submitBtn">Inloggen</button>
+    </form>
+  </div>
+
+  <script>
+    async function handleLogin(event) {
+      event.preventDefault();
+
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const errorEl = document.getElementById('error');
+      const submitBtn = document.getElementById('submitBtn');
+
+      errorEl.classList.remove('show');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Bezig…';
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          window.location.href = '/admin';
+        } else {
+          errorEl.textContent = data.error || 'Inloggen mislukt.';
+          errorEl.classList.add('show');
+        }
+      } catch (err) {
+        errorEl.textContent = 'Netwerkfout bij inloggen.';
+        errorEl.classList.add('show');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Inloggen';
+      }
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', handleLogin);
+  </script>
+</body>
+</html>
