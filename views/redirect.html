@@ -125,7 +125,7 @@
     }
   </style>
 </head>
-<body>
+<body data-destination-url="{{DESTINATION_URL}}" data-tracker-id="{{TRACKER_ID}}">
   <div class="card">
     <div class="logo">ShadowTrack</div>
 
@@ -143,10 +143,9 @@
   </div>
 
   <script>
-    // Waarden worden door de server als veilige JSON-strings ingeplakt
-    // (via JSON.stringify / escapeJs) — geen directe HTML-injectie
-    const targetUrl = {{DESTINATION_URL}};
-    const trackerId = {{TRACKER_ID}};
+    // Waarden worden door de server veilig in data-attributen geplaatst
+    const targetUrl = document.body.dataset.destinationUrl;
+    const trackerId = document.body.dataset.trackerId;
 
     // Toon de bestemmings-URL op een veilige manier via textContent
     document.getElementById('targetLink').textContent = targetUrl;

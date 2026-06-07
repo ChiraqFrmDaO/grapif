@@ -410,10 +410,10 @@ async function handleTrackerRedirect(trackerId, res) {
 
   let html = await fsp.readFile(path.join(__dirname, 'views', 'redirect.html'), 'utf8');
 
-  // Veilige injectie: gebruik JSON.stringify voor JS-context
+  // Veilige injectie in HTML data-attributen
   html = html
-    .replace('{{DESTINATION_URL}}', escapeJs(destinationUrl))
-    .replace('{{TRACKER_ID}}',      escapeJs(trackerId));
+    .replace('{{DESTINATION_URL}}', escapeHtml(destinationUrl))
+    .replace('{{TRACKER_ID}}',      escapeHtml(trackerId));
 
   res.send(html);
 }
