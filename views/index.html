@@ -47,7 +47,7 @@
 
     h1 {
       font-family: 'Syne', sans-serif;
-      font-size: clamp(3rem, 8vw, 5.5rem);
+      font-size: clamp(2rem, 5vw, 4.5rem);
       font-weight: 800;
       letter-spacing: .1em;
       background: linear-gradient(90deg, #00ff88, #00ccff);
@@ -57,7 +57,7 @@
     }
 
     .sub {
-      font-size: 1rem;
+      font-size: clamp(0.85rem, 2vw, 1rem);
       opacity: .6;
       letter-spacing: .12em;
       text-transform: uppercase;
@@ -66,12 +66,12 @@
 
     .btn {
       display: inline-block;
-      padding: 16px 44px;
+      padding: 12px 32px;
       background: linear-gradient(135deg, #00ff88, #00ccff);
       color: #07080f;
       font-family: 'Syne', sans-serif;
       font-weight: 700;
-      font-size: 1rem;
+      font-size: clamp(0.85rem, 2vw, 1rem);
       letter-spacing: .08em;
       text-decoration: none;
       border-radius: 100px;
@@ -81,6 +81,14 @@
     .btn:hover {
       transform: translateY(-3px);
       box-shadow: 0 0 60px rgba(0,255,136,.4);
+    }
+
+    @media (max-width: 480px) {
+      .center {
+        padding: 0 16px;
+      }
+      h1 { margin-bottom: 12px; }
+      .sub { margin-bottom: 32px; }
     }
   </style>
 </head>
