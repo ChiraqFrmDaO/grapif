@@ -6,12 +6,15 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
     "dotenv": "^16.4.5",
-    "ua-parser-js": "^1.0.39",
+    "express": "^4.19.2",
     "express-basic-auth": "^1.2.1",
+    "express-rate-limit": "^8.5.2",
     "helmet": "^7.0.0",
+    "install": "^0.13.0",
     "morgan": "^1.10.0",
-    "pg": "^8.13.0"
+    "npm": "^11.16.0",
+    "pg": "^8.13.0",
+    "ua-parser-js": "^1.0.39"
   }
 }
