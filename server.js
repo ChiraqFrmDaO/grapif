@@ -16,7 +16,7 @@
 const express    = require('express');
 const dotenv     = require('dotenv');
 const uaParser   = require('ua-parser-js');
-const basicAuth  = require('express-basic-auth');
+const session    = require('express-session');
 const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
 const fsp        = require('fs').promises;
@@ -50,11 +50,29 @@ app.use(express.static('public'));
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 
-// ── Authenticatie ─────────────────────────────────────────────────────────────
-const auth = basicAuth({
-  users: { [process.env.ADMIN_USER || 'admin']: process.env.ADMIN_PASS || 'change_me' },
-  challenge: true
-});
+// ── Session management ────────────────────────────────────────────────────────
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'change_me_in_production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // set to true if using HTTPS in production
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// ── Authenticatie middleware ──────────────────────────────────────────────────
+function requireAuth(req, res, next) {
+  if (req.session && req.session.authenticated) {
+    return next();
+  }
+  res.redirect('/login');
+}
+
+// ── Admin credentials ─────────────────────────────────────────────────────────
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
+const ADMIN_PASS = process.env.ADMIN_PASS || 'change_me';
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const geoLimiter = rateLimit({
@@ -466,7 +484,7 @@ app.post('/api/log-geo', geoLimiter, async (req, res) => {
 });
 
 // Tracker opslaan (met URL-validatie + reserved-ID check)
-app.post('/api/save-tracker', auth, async (req, res) => {
+app.post('/api/save-tracker', requireAuth, async (req, res) => {
   let { tracker_id, name, destination_url } = req.body;
 
   // Genereer een ID als er geen is opgegeven (admin laat het veld leeg)
@@ -501,7 +519,7 @@ app.post('/api/save-tracker', auth, async (req, res) => {
   }
 });
 
-app.get('/api/trackers', auth, async (req, res) => {
+app.get('/api/trackers', requireAuth, async (req, res) => {
   try {
     res.json(await loadTrackers());
   } catch (error) {
@@ -510,7 +528,7 @@ app.get('/api/trackers', auth, async (req, res) => {
   }
 });
 
-app.post('/api/delete-tracker', auth, async (req, res) => {
+app.post('/api/delete-tracker', requireAuth, async (req, res) => {
   const { tracker_id } = req.body;
   if (!tracker_id) return res.status(400).json({ error: 'Missing tracker_id' });
 
@@ -524,7 +542,7 @@ app.post('/api/delete-tracker', auth, async (req, res) => {
   }
 });
 
-app.get('/api/summary', auth, async (req, res) => {
+app.get('/api/summary', requireAuth, async (req, res) => {
   try {
     res.json(await getSummary());
   } catch (error) {
@@ -533,11 +551,31 @@ app.get('/api/summary', auth, async (req, res) => {
   }
 });
 
-app.get('/admin', auth, (req, res) => {
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'views/login.html'));
+});
+
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === ADMIN_USER && password === ADMIN_PASS) {
+    req.session.authenticated = true;
+    req.session.user = username;
+    return res.json({ success: true });
+  }
+  res.status(401).json({ error: 'Ongeldige gebruikersnaam of wachtwoord.' });
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ success: true });
+  });
+});
+
+app.get('/admin', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'admin.html'));
 });
 
-app.get('/api/logs', auth, async (req, res) => {
+app.get('/api/logs', requireAuth, async (req, res) => {
   try {
     const logs     = await getLogs();
     const trackers = useDb ? [] : await readTrackersFile();

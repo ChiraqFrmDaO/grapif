@@ -10,6 +10,7 @@
     "express": "^4.19.2",
     "express-basic-auth": "^1.2.1",
     "express-rate-limit": "^8.5.2",
+    "express-session": "^1.19.0",
     "helmet": "^7.0.0",
     "install": "^0.13.0",
     "morgan": "^1.10.0",

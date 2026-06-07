@@ -281,6 +281,7 @@
   <header>
     <h1>SHADOWTRACK</h1>
     <span>IP Tracking Dashboard</span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()" style="margin-left: auto;">↪ Uitloggen</button>
   </header>
 
   <div class="dash-grid">
@@ -763,6 +764,19 @@
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeModal();
   });
+
+  // ── Logout ─────────────────────────────────────────────────────────────────
+  async function logout() {
+    if (!confirm('Weet je zeker dat je wilt uitloggen?')) return;
+    try {
+      const res = await fetch('/api/logout', { method: 'POST' });
+      if (res.ok) {
+        window.location.href = '/login';
+      }
+    } catch (err) {
+      alert('Fout bij uitloggen.');
+    }
+  }
 
   // ── Initieel laden ─────────────────────────────────────────────────────────
   loadSummary();
