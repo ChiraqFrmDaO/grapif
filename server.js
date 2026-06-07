@@ -21,8 +21,7 @@ const pgSession    = require('connect-pg-simple')(session);
 const helmet       = require('helmet');
 const rateLimit    = require('express-rate-limit');
 const fsp          = require('fs').promises;
-const fs           = require('fs');
-const crypto       = require('crypto');
+const fs           = require('fs');const https      = require('https');const crypto       = require('crypto');
 const path         = require('path');
 const { Pool }     = require('pg');
 
@@ -151,6 +150,45 @@ function getClientIp(req) {
   const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
     .split(',')[0].trim();
   return ip.replace(/^::ffff:/, '') || 'Unknown';
+}
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (err) { reject(err); }
+      });
+    }).on('error', reject);
+  });
+}
+
+async function getGeoInfoForIp(ip) {
+  if (!ip || ip === 'Unknown') return null;
+  const endpoints = [
+    `https://ipwhois.app/json/${encodeURIComponent(ip)}`,
+    `https://ipapi.co/${encodeURIComponent(ip)}/json/`
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const data = await fetchJson(url);
+      if (!data || !data.ip) continue;
+      return {
+        ip:      data.ip,
+        country: data.country_name || data.country || 'Unknown',
+        city:    data.city || 'Unknown',
+        isp:     data.org || data.isp || 'Unknown',
+        lat:     data.latitude ?? data.lat ?? null,
+        lon:     data.longitude ?? data.lon ?? null
+      };
+    } catch (err) {
+      console.warn('Server-side geo lookup failed for', url, err.message);
+    }
+  }
+  return null;
 }
 
 function isBotUserAgent(userAgent) {
@@ -489,24 +527,43 @@ app.post('/api/log-geo', geoLimiter, async (req, res) => {
     const userAgent = req.headers['user-agent'] || 'Unknown';
     if (isBotUserAgent(userAgent)) return res.json({ success: true });
 
-    const parser  = uaParser(userAgent);
+    const parser = uaParser(userAgent);
     const tracker = await loadTrackerById(tracker_id);
+
+    const serverIp = getClientIp(req);
+    const ip = clientIp && clientIp !== 'Unknown' ? clientIp : serverIp;
+    let finalCountry = country && country !== 'Unknown' ? country : null;
+    let finalCity = city && city !== 'Unknown' ? city : null;
+    let finalIsp = isp && isp !== 'Unknown' ? isp : null;
+    let finalLat = lat ?? null;
+    let finalLon = lon ?? null;
+
+    if (!finalCountry || !finalCity || !finalIsp) {
+      const geoInfo = await getGeoInfoForIp(ip);
+      if (geoInfo) {
+        finalCountry = finalCountry || geoInfo.country;
+        finalCity    = finalCity    || geoInfo.city;
+        finalIsp     = finalIsp     || geoInfo.isp;
+        finalLat     = finalLat     || geoInfo.lat;
+        finalLon     = finalLon     || geoInfo.lon;
+      }
+    }
 
     await appendLog({
       timestamp:    new Date().toISOString(),
       tracker_id,
       tracker_name: tracker?.name || 'Onbekend',
-      ip:           clientIp || getClientIp(req),
-      country:      country  || 'Unknown',
-      city:         city     || 'Unknown',
-      isp:          isp      || 'Unknown',
+      ip,
+      country:      finalCountry || 'Unknown',
+      city:         finalCity    || 'Unknown',
+      isp:          finalIsp     || 'Unknown',
       browser:      parser.browser.name || 'Unknown',
       os:           parser.os.name      || 'Unknown',
       device:       parser.device.type  || 'desktop',
       useragent:    userAgent,
       referer:      req.headers.referer || 'Direct',
-      latitude:     lat || null,
-      longitude:    lon || null,
+      latitude:     finalLat,
+      longitude:    finalLon,
       is_pixel:     false
     });
 
