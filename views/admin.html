@@ -281,7 +281,7 @@
   <header>
     <h1>SHADOWTRACK</h1>
     <span>IP Tracking Dashboard</span>
-    <button class="btn btn-secondary btn-sm" onclick="logout()" style="margin-left: auto;">↪ Uitloggen</button>
+    <button id="logoutBtn" class="btn btn-secondary btn-sm" style="margin-left: auto;">↪ Uitloggen</button>
   </header>
 
   <div class="dash-grid">
@@ -320,7 +320,7 @@
         <input type="text" id="domain" value="https://" placeholder="https://mijndomein.nl">
       </div>
 
-      <button class="btn btn-primary" onclick="generateLink()" id="generateBtn">
+      <button class="btn btn-primary" id="generateBtn">
         ＋ Link aanmaken
       </button>
 
@@ -328,7 +328,7 @@
         <div><strong>Trackinglink:</strong></div>
         <div class="copy-row">
           <input type="text" id="generatedLink" readonly>
-          <button class="btn btn-secondary btn-sm" onclick="copyLink()">Kopieer</button>
+          <button id="copyBtn" class="btn btn-secondary btn-sm">Kopieer</button>
           <span id="copyFeedback">✓ Gekopieerd</span>
         </div>
       </div>
@@ -350,7 +350,7 @@
   <div class="section">
     <div class="table-header">
       <p class="section-title" style="margin:0;">Laatste logs</p>
-      <button class="btn btn-secondary btn-sm" onclick="loadLogs()">↻ Ververs</button>
+      <button id="refreshBtn" class="btn btn-secondary btn-sm">↻ Ververs</button>
     </div>
     <div class="table-wrapper">
       <table id="logsTable">
@@ -375,7 +375,7 @@
   <div class="modal-box">
     <div class="modal-header">
       <h2 id="detailModalTitle">Log details</h2>
-      <button class="btn btn-secondary btn-sm" onclick="closeModal()">✕ Sluiten</button>
+      <button id="closeModalBtn" class="btn btn-secondary btn-sm">✕ Sluiten</button>
     </div>
     <div id="detailContent"></div>
   </div>
@@ -416,6 +416,12 @@
     document.getElementById('customDomainWrapper').style.display =
       this.value === 'custom' ? '' : 'none';
   });
+
+  document.getElementById('logoutBtn').addEventListener('click', logout);
+  document.getElementById('generateBtn').addEventListener('click', generateLink);
+  document.getElementById('copyBtn').addEventListener('click', copyLink);
+  document.getElementById('refreshBtn').addEventListener('click', loadLogs);
+  document.getElementById('closeModalBtn').addEventListener('click', closeModal);
 
   // ── Link genereren ─────────────────────────────────────────────────────────
   async function generateLink() {
