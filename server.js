@@ -55,9 +55,11 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'change_me_in_production',
   resave: false,
   saveUninitialized: false,
+  name: 'sid',
   cookie: {
-    secure: false, // set to true if using HTTPS in production
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
+    sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
@@ -73,6 +75,12 @@ function requireAuth(req, res, next) {
 // ── Admin credentials ─────────────────────────────────────────────────────────
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'change_me';
+
+if (process.env.ADMIN_USER || process.env.ADMIN_PASS) {
+  console.log('🔐 Admin credentials loaded from environment.');
+} else {
+  console.warn('⚠️ Geen ADMIN_USER/ADMIN_PASS gevonden. Gebruik admin/change_me alleen voor lokale tests.');
+}
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const geoLimiter = rateLimit({

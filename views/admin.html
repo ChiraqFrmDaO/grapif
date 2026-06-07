@@ -479,7 +479,7 @@
   // ── Data laden ─────────────────────────────────────────────────────────────
   async function loadSummary() {
     try {
-      const res   = await fetch('/api/summary');
+      const res   = await fetch('/api/summary', { credentials: 'same-origin' });
       const stats = await res.json();
       document.getElementById('trackerCount').textContent = stats.totalTrackers ?? '—';
       document.getElementById('visitCount').textContent   = stats.totalVisits   ?? '—';
@@ -492,7 +492,7 @@
   async function loadTrackersList() {
     const container = document.getElementById('trackersList');
     try {
-      const res      = await fetch('/api/trackers');
+      const res      = await fetch('/api/trackers', { credentials: 'same-origin' });
       const trackers = await res.json();
 
       if (!trackers.length) {
@@ -559,7 +559,7 @@
     tbody.innerHTML = '<tr><td colspan="8"><div class="skeleton"></div></td></tr>';
 
     try {
-      const res  = await fetch('/api/logs');
+      const res  = await fetch('/api/logs', { credentials: 'same-origin' });
       const logs = await res.json();
       allLogs    = logs;
 
@@ -739,6 +739,7 @@
     try {
       const res  = await fetch('/api/delete-tracker', {
         method:  'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ tracker_id: trackerId })
       });
@@ -769,7 +770,7 @@
   async function logout() {
     if (!confirm('Weet je zeker dat je wilt uitloggen?')) return;
     try {
-      const res = await fetch('/api/logout', { method: 'POST' });
+      const res = await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
       if (res.ok) {
         window.location.href = '/login';
       }
