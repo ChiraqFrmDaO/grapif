@@ -565,12 +565,22 @@ app.get('/login', (req, res) => {
 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
+  const isJson = req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
+
   if (username === ADMIN_USER && password === ADMIN_PASS) {
     req.session.authenticated = true;
     req.session.user = username;
-    return res.json({ success: true });
+    if (isJson) {
+      return res.json({ success: true });
+    }
+    return res.redirect('/admin');
   }
-  res.status(401).json({ error: 'Ongeldige gebruikersnaam of wachtwoord.' });
+
+  if (isJson) {
+    return res.status(401).json({ error: 'Ongeldige gebruikersnaam of wachtwoord.' });
+  }
+
+  res.redirect('/login');
 });
 
 app.post('/api/logout', (req, res) => {
