@@ -442,6 +442,7 @@
     try {
       const res  = await fetch('/api/save-tracker', {
         method:  'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ name, destination_url: destination })
       });
