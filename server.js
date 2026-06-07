@@ -13,22 +13,31 @@
  *  - Reserved-list uitgebreid en ook gecontroleerd bij opslaan van tracker
  */
 
-const express    = require('express');
-const dotenv     = require('dotenv');
-const uaParser   = require('ua-parser-js');
-const session    = require('express-session');
-const helmet     = require('helmet');
-const rateLimit  = require('express-rate-limit');
-const fsp        = require('fs').promises;
-const fs         = require('fs');
-const crypto     = require('crypto');
-const path       = require('path');
-const { Pool }   = require('pg');
+const express      = require('express');
+const dotenv       = require('dotenv');
+const uaParser     = require('ua-parser-js');
+const session      = require('express-session');
+const pgSession    = require('connect-pg-simple')(session);
+const helmet       = require('helmet');
+const rateLimit    = require('express-rate-limit');
+const fsp          = require('fs').promises;
+const fs           = require('fs');
+const crypto       = require('crypto');
+const path         = require('path');
+const { Pool }     = require('pg');
 
 dotenv.config();
 
 const app = express();
 app.set('trust proxy', 1);
+
+const sessionStore = process.env.DATABASE_URL ? new pgSession({
+  conObject: {
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+  },
+  tableName: 'session'
+}) : null;
 
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet({
@@ -52,8 +61,7 @@ app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 
 // ── Session management ────────────────────────────────────────────────────────
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'change_me_in_production',
+app.use(session({  store: sessionStore || undefined,  secret: process.env.SESSION_SECRET || 'change_me_in_production',
   resave: false,
   saveUninitialized: false,
   name: 'sid',
@@ -198,6 +206,16 @@ async function initDatabase() {
         created_at    timestamptz NOT NULL DEFAULT now(),
         updated_at    timestamptz NOT NULL DEFAULT now()
       );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS "session" (
+        sid varchar PRIMARY KEY NOT NULL,
+        sess json NOT NULL,
+        expire timestamptz NOT NULL
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
     `);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS logs (
