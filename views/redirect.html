@@ -179,17 +179,18 @@
       const payload = { tracker_id: trackerId, ...geo };
 
       try {
+        await fetch('/api/log-geo', {
+          method:  'POST',
+          credentials: 'same-origin',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.warn('Log naar server mislukt met fetch:', err);
         if (navigator.sendBeacon) {
           navigator.sendBeacon('/api/log-geo', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
-        } else {
-          await fetch('/api/log-geo', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify(payload)
-          });
         }
-      } catch (err) {
-        console.warn('Log naar server mislukt:', err);
       }
     }
 
