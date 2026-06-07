@@ -197,7 +197,13 @@
       padding: 18px;
     }
     .tracker-card h3 { font-family: 'Syne', sans-serif; font-size: 0.95rem; margin-bottom: 10px; color: var(--text); }
-    .tracker-card .meta { font-size: 0.75rem; color: var(--muted); word-break: break-all; margin-bottom: 4px; }
+    .tracker-card .meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
     .tracker-card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 
     /* ── Table ──────────────────────────────── */
