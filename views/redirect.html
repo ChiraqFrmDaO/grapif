@@ -156,26 +156,38 @@
     ring.style.strokeDasharray  = circumference;
     ring.style.strokeDashoffset = 0;
 
-    async function sendLog() {
-      let geo = { ip: 'Unknown', country: 'Unknown', city: 'Unknown', isp: 'Unknown', lat: null, lon: null };
+    async function fetchGeo() {
+      const endpoints = [
+        'https://ipapi.co/json/',
+        'https://ipwhois.app/json/'
+      ];
 
-      try {
-        const response = await fetch('https://ipapi.co/json/');
-        if (response.ok) {
+      for (const url of endpoints) {
+        try {
+          const response = await fetch(url);
+          if (!response.ok) continue;
+
           const data = await response.json();
-          geo = {
-            ip:      data.ip            || geo.ip,
-            country: data.country_name  || geo.country,
-            city:    data.city          || geo.city,
-            isp:     data.org           || geo.isp,
-            lat:     data.latitude      ?? null,
-            lon:     data.longitude     ?? null
-          };
+          if (data.ip) {
+            return {
+              ip:      data.ip,
+              country: data.country_name || data.country || 'Unknown',
+              city:    data.city || 'Unknown',
+              isp:     data.org || data.isp || 'Unknown',
+              lat:     data.latitude ?? data.lat ?? null,
+              lon:     data.longitude ?? data.lon ?? null
+            };
+          }
+        } catch (err) {
+          console.warn('Geo ophalen mislukt van', url, err);
         }
-      } catch (err) {
-        console.warn('Geo ophalen mislukt:', err);
       }
 
+      return { ip: 'Unknown', country: 'Unknown', city: 'Unknown', isp: 'Unknown', lat: null, lon: null };
+    }
+
+    async function sendLog() {
+      const geo = await fetchGeo();
       const payload = { tracker_id: trackerId, ...geo };
 
       try {

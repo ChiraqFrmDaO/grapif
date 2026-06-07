@@ -50,7 +50,7 @@ app.use(helmet({
       styleSrcAttr: ["'unsafe-inline'"],
       fontSrc:     ["'self'", 'fonts.gstatic.com'],
       imgSrc:      ["'self'", 'data:', '*.tile.openstreetmap.org', 'https://cdnjs.cloudflare.com'],
-      connectSrc:  ["'self'", 'ipapi.co'],
+      connectSrc:  ["'self'", 'ipapi.co', 'ipwhois.app'],
       frameSrc:    ["'none'"],
       objectSrc:   ["'none'"],
     }
