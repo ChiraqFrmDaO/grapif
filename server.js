@@ -1,5 +1,5 @@
 /**
- * ShadowTrack - server.js (verbeterd)
+ * 𝐑𝟑𝐃𝐈𝐑𝟑𝐂𝐓 - server.js (verbeterd)
  *
  * Wijzigingen t.o.v. origineel:
  *  - helmet toegevoegd voor security-headers (CSP, X-Frame-Options, etc.)
@@ -703,6 +703,6 @@ app.get('/:trackerId', async (req, res, next) => {
 const PORT = process.env.PORT || 3000;
 initDatabase().then(() => {
   app.listen(PORT, () => {
-    console.log(`🚀 R3DIR3CT draait op poort ${PORT}`);
+    console.log(`🚀 𝐑𝟑𝐃𝐈𝐑𝟑𝐂𝐓 draait op poort ${PORT}`);
   });
 });
