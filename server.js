@@ -703,6 +703,6 @@ app.get('/:trackerId', async (req, res, next) => {
 const PORT = process.env.PORT || 3000;
 initDatabase().then(() => {
   app.listen(PORT, () => {
-    console.log(`🚀 ShadowTrack draait op poort ${PORT}`);
+    console.log(`🚀 R3DIR3CT draait op poort ${PORT}`);
   });
 });

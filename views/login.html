@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ShadowTrack — Login</title>
+  <title>R3DIR3CT — Login</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@600;800&display=swap');
 
@@ -164,23 +164,23 @@
 </head>
 <body>
   <div class="login-box">
-    <h1>SHADOWTRACK</h1>
+    <h1>R3DIR3CT</h1>
     <p class="subtitle">Dashboard Login</p>
 
     <div id="error" class="error"></div>
 
     <form id="loginForm" action="/api/login" method="post">
       <div class="field">
-        <label for="username">Gebruikersnaam</label>
+        <label for="username">Username</label>
         <input type="text" id="username" name="username" autocomplete="username" required autofocus>
       </div>
 
       <div class="field">
-        <label for="password">Wachtwoord</label>
+        <label for="password">Password</label>
         <input type="password" id="password" name="password" autocomplete="current-password" required>
       </div>
 
-      <button type="submit" class="btn" id="submitBtn">Inloggen</button>
+      <button type="submit" class="btn" id="submitBtn">Login</button>
     </form>
   </div>
 
@@ -210,15 +210,15 @@
         if (res.ok && data.success) {
           window.location.href = '/admin';
         } else {
-          errorEl.textContent = data.error || 'Inloggen mislukt.';
+          errorEl.textContent = data.error || 'Login failed.';
           errorEl.classList.add('show');
         }
       } catch (err) {
-        errorEl.textContent = 'Netwerkfout bij inloggen.';
+        errorEl.textContent = 'Network error occurred.';
         errorEl.classList.add('show');
       } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Inloggen';
+        submitBtn.textContent = 'Login';
       }
     }
 
