@@ -26,6 +26,12 @@ const { Pool }     = require('pg');
 
 dotenv.config();
 
+console.log('ENV CHECK:', {
+  DATABASE_URL: Boolean(process.env.DATABASE_URL),
+  DB_SSL: process.env.DB_SSL,
+  NODE_ENV: process.env.NODE_ENV
+});
+
 const app = express();
 app.set('trust proxy', 1);
 
@@ -283,7 +289,8 @@ async function initDatabase() {
     useDb = true;
     console.log('✅ Postgres connectie actief. Opslag via database.');
   } catch (error) {
-    console.error('❌ Database connectie mislukt. Gebruik fallback file storage.', error.message);
+    console.error('❌ Database connectie mislukt. Gebruik fallback file storage.');
+    console.error(error);
     pool  = null;
     useDb = false;
   }
