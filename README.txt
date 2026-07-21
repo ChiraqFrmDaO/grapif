@@ -1,6 +1,6 @@
 # IP Logger
 
-Een eenvoudige IP tracking applicatie met Node.js en SQLite.
+Een eenvoudige IP tracking applicatie met Node.js en PostgreSQL.
 
 ## Installatie
 
@@ -19,6 +19,16 @@ Een eenvoudige IP tracking applicatie met Node.js en SQLite.
    npm start
    ```
 
+## Deploy op Render
+
+1. Push code naar GitHub
+2. Maak een nieuwe PostgreSQL database aan in Render
+3. Maak een nieuwe Web Service aan in Render
+4. Voeg environment variables toe:
+   - `ADMIN_USER`: Je gebruikersnaam
+   - `ADMIN_PASS`: Je wachtwoord
+   - `DATABASE_URL`: PostgreSQL connection string (automatisch toegevoegd door Render)
+
 ## Gebruik
 
 1. Ga naar `http://localhost:3000/admin`
@@ -31,7 +41,7 @@ Een eenvoudige IP tracking applicatie met Node.js en SQLite.
 - 🎯 Maak tracking links aan met custom bestemmingen
 - 📊 Bekijk IP adres, locatie, browser en OS van bezoekers
 - 🔐 Beveiligd dashboard met basic auth
-- 💾 SQLite database voor data opslag
+- 💾 PostgreSQL database voor data opslag
 - 🗑️ Verwijder trackers en bijbehorende logs
 
 ## Environment Variables
@@ -39,3 +49,4 @@ Een eenvoudige IP tracking applicatie met Node.js en SQLite.
 - `PORT`: Server poort (default: 3000)
 - `ADMIN_USER`: Gebruikersnaam voor dashboard
 - `ADMIN_PASS`: Wachtwoord voor dashboard
+- `DATABASE_URL`: PostgreSQL connection string

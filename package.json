@@ -10,6 +10,6 @@
     "dotenv": "^16.4.5",
     "ua-parser-js": "^1.0.39",
     "express-basic-auth": "^1.2.1",
-    "sql.js": "^1.10.3"
+    "pg": "^8.11.3"
   }
 }
