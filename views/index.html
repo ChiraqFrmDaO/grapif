@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>𝐑𝟑𝐃𝐈𝐑𝟑𝐂𝐓</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=JetBrains+Mono&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: #07080f;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: -40%;
+      background:
+        radial-gradient(ellipse at 25% 35%, rgba(0,255,136,.10) 0%, transparent 55%),
+        radial-gradient(ellipse at 75% 65%, rgba(0,204,255,.08) 0%, transparent 55%);
+      animation: breathe 8s ease-in-out infinite alternate;
+      pointer-events: none;
+    }
+    @keyframes breathe {
+      from { opacity: .7; transform: scale(1); }
+      to   { opacity: 1;  transform: scale(1.05); }
+    }
+
+    .center {
+      position: relative;
+      text-align: center;
+      animation: fadeUp .7s cubic-bezier(.22,1,.36,1) both;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2rem, 5vw, 4.5rem);
+      font-weight: 800;
+      letter-spacing: .1em;
+      background: linear-gradient(90deg, #00ff88, #00ccff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 16px;
+    }
+
+    .sub {
+      font-size: clamp(0.85rem, 2vw, 1rem);
+      opacity: .6;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 44px;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 12px 32px;
+      background: linear-gradient(135deg, #00ff88, #00ccff);
+      color: #07080f;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: clamp(0.85rem, 2vw, 1rem);
+      letter-spacing: .08em;
+      text-decoration: none;
+      border-radius: 100px;
+      box-shadow: 0 0 40px rgba(0,255,136,.25);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 0 60px rgba(0,255,136,.4);
+    }
+
+    @media (max-width: 480px) {
+      .center {
+        padding: 0 16px;
+      }
+      h1 { margin-bottom: 12px; }
+      .sub { margin-bottom: 32px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="center">
+    <h1>R3DIR3CT</h1>
+    <p class="sub">Advanced Re-direction &amp; Analytics</p>
+    <a href="/admin" class="btn">LOGIN ADMIN ENVIRONMENT →</a>
+  </div>
+</body>
+</html>
