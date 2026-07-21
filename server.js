@@ -17,7 +17,6 @@ const express      = require('express');
 const dotenv       = require('dotenv');
 const uaParser     = require('ua-parser-js');
 const session      = require('express-session');
-const pgSession    = require('connect-pg-simple')(session);
 const helmet       = require('helmet');
 const rateLimit    = require('express-rate-limit');
 const fsp          = require('fs').promises;
@@ -30,13 +29,17 @@ dotenv.config();
 const app = express();
 app.set('trust proxy', 1);
 
-const sessionStore = process.env.DATABASE_URL ? new pgSession({
-  conObject: {
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
-  },
-  tableName: 'session'
-}) : null;
+function getDbSslConfig() {
+  const value = String(process.env.DB_SSL || '').trim().toLowerCase();
+  if (['false', '0', 'no', 'off', 'disable'].includes(value)) {
+    return false;
+  }
+  return { rejectUnauthorized: false };
+}
+
+// Gebruik de ingebouwde memory-store als fallback. Dit voorkomt 500-fouten
+// wanneer PostgreSQL niet beschikbaar is of SSL-instellingen op Render niet werken.
+const sessionStore = null;
 
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet({
@@ -232,7 +235,7 @@ async function initDatabase() {
 
   const config = {
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+    ssl: getDbSslConfig()
   };
 
   try {
