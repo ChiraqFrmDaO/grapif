@@ -91,7 +91,7 @@
       tbody.innerHTML = '';
 
       trackers.forEach(t => {
-        const fullLink = `http://localhost:3000/track/${t.tracker_id}`;
+        const fullLink = `${window.location.origin}/track/${t.tracker_id}`;
         const row = `
           <tr>
             <td>${t.name}</td>
