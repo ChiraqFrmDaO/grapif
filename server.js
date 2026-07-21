@@ -2,7 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const uaParser = require('ua-parser-js');
 const basicAuth = require('express-basic-auth');
-const initSqlJs = require('sql.js');
+const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -13,51 +13,37 @@ const app = express();
 app.use(express.static('public'));
 app.use(express.json());
 
-// Database setup with sql.js
-let db;
-const dbPath = path.join(__dirname, 'ip_logger.db');
+// PostgreSQL setup
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
 
 async function initDatabase() {
-  const SQL = await initSqlJs();
-  
-  // Load existing database or create new one
-  if (fs.existsSync(dbPath)) {
-    const fileBuffer = fs.readFileSync(dbPath);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-    db.run(`
-      CREATE TABLE trackers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tracker_id TEXT UNIQUE NOT NULL,
-        name TEXT NOT NULL,
-        destination_url TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-      
-      CREATE TABLE logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tracker_id TEXT NOT NULL,
-        ip TEXT NOT NULL,
-        country TEXT,
-        city TEXT,
-        isp TEXT,
-        browser TEXT,
-        os TEXT,
-        device TEXT,
-        useragent TEXT,
-        referer TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    saveDatabase();
-  }
-}
-
-function saveDatabase() {
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(dbPath, buffer);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS trackers (
+      id SERIAL PRIMARY KEY,
+      tracker_id TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      destination_url TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE TABLE IF NOT EXISTS logs (
+      id SERIAL PRIMARY KEY,
+      tracker_id TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      country TEXT,
+      city TEXT,
+      isp TEXT,
+      browser TEXT,
+      os TEXT,
+      device TEXT,
+      useragent TEXT,
+      referer TEXT,
+      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 }
 
 const auth = basicAuth({
@@ -77,18 +63,16 @@ app.get('/track/:id', async (req, res) => {
   const userAgent = req.headers['user-agent'] || 'Unknown';
   const referer = req.headers.referer || 'Direct';
 
-  // Get tracker from database
-  const stmt = db.prepare('SELECT destination_url FROM trackers WHERE tracker_id = :trackerId');
-  stmt.bind({ ':trackerId': trackerId });
-  const tracker = stmt.getAsObject();
-  
-  if (!tracker || !tracker.destination_url) {
-    return res.status(404).send('<h1>❌ Tracker niet gevonden</h1>');
-  }
-
-  const destinationUrl = tracker.destination_url;
-
   try {
+    // Get tracker from database
+    const trackerResult = await pool.query('SELECT destination_url FROM trackers WHERE tracker_id = $1', [trackerId]);
+    
+    if (!trackerResult.rows[0]) {
+      return res.status(404).send('<h1>❌ Tracker niet gevonden</h1>');
+    }
+
+    const destinationUrl = trackerResult.rows[0].destination_url;
+
     const parser = uaParser(userAgent);
 
     let geo = {};
@@ -98,35 +82,34 @@ app.get('/track/:id', async (req, res) => {
     } catch (e) {}
 
     // Insert log into database
-    const insertLog = db.prepare(`
-      INSERT INTO logs (tracker_id, ip, country, city, isp, browser, os, device, useragent, referer, timestamp)
-      VALUES (:trackerId, :ip, :country, :city, :isp, :browser, :os, :device, :useragent, :referer, :timestamp)
-    `);
-    
-    insertLog.run({
-      ':trackerId': trackerId,
-      ':ip': ip,
-      ':country': geo.country || 'Unknown',
-      ':city': geo.city || 'Unknown',
-      ':isp': geo.isp || 'Unknown',
-      ':browser': parser.browser.name || 'Unknown',
-      ':os': parser.os.name || 'Unknown',
-      ':device': parser.device.type || 'desktop',
-      ':useragent': userAgent,
-      ':referer': referer,
-      ':timestamp': new Date().toISOString()
-    });
+    await pool.query(
+      `INSERT INTO logs (tracker_id, ip, country, city, isp, browser, os, device, useragent, referer, timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        trackerId,
+        ip,
+        geo.country || 'Unknown',
+        geo.city || 'Unknown',
+        geo.isp || 'Unknown',
+        parser.browser.name || 'Unknown',
+        parser.os.name || 'Unknown',
+        parser.device.type || 'desktop',
+        userAgent,
+        referer,
+        new Date().toISOString()
+      ]
+    );
 
-    saveDatabase();
     console.log(`✅ Gelogd → ${trackerId} | IP: ${ip}`);
+
+    // Redirect
+    const html = fs.readFileSync(path.join(__dirname, 'views', 'redirect.html'), 'utf8');
+    res.send(html.replace('{{DESTINATION_URL}}', destinationUrl));
 
   } catch (error) {
     console.error("Error:", error);
+    res.status(500).send('Server error');
   }
-
-  // Redirect
-  const html = fs.readFileSync(path.join(__dirname, 'views', 'redirect.html'), 'utf8');
-  res.send(html.replace('{{DESTINATION_URL}}', destinationUrl));
 });
 
 // ADMIN DASHBOARD
@@ -135,45 +118,40 @@ app.get('/admin', auth, (req, res) => {
 });
 
 // API: Get all logs
-app.get('/api/logs', auth, (req, res) => {
-  const stmt = db.prepare('SELECT * FROM logs ORDER BY id DESC');
-  const logs = [];
-  while (stmt.step()) {
-    logs.push(stmt.getAsObject());
+app.get('/api/logs', auth, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM logs ORDER BY id DESC');
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch logs' });
   }
-  res.json(logs);
 });
 
 // API: Get all trackers
-app.get('/api/trackers', auth, (req, res) => {
-  const stmt = db.prepare('SELECT * FROM trackers ORDER BY id DESC');
-  const trackers = [];
-  while (stmt.step()) {
-    trackers.push(stmt.getAsObject());
+app.get('/api/trackers', auth, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM trackers ORDER BY id DESC');
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch trackers' });
   }
-  res.json(trackers);
 });
 
 // API: Create new tracker
-app.post('/api/trackers', auth, (req, res) => {
+app.post('/api/trackers', auth, async (req, res) => {
   const { name, destination_url } = req.body;
   
   if (!name || !destination_url) {
     return res.status(400).json({ error: 'Name and destination_url are required' });
   }
 
-  // Generate unique tracker ID
   const trackerId = crypto.randomBytes(8).toString('hex');
   
   try {
-    const insert = db.prepare('INSERT INTO trackers (tracker_id, name, destination_url) VALUES (:trackerId, :name, :destination_url)');
-    insert.run({
-      ':trackerId': trackerId,
-      ':name': name,
-      ':destination_url': destination_url
-    });
-    
-    saveDatabase();
+    await pool.query(
+      'INSERT INTO trackers (tracker_id, name, destination_url) VALUES ($1, $2, $3)',
+      [trackerId, name, destination_url]
+    );
     res.json({ tracker_id: trackerId });
   } catch (error) {
     res.status(500).json({ error: 'Failed to create tracker' });
@@ -181,18 +159,12 @@ app.post('/api/trackers', auth, (req, res) => {
 });
 
 // API: Delete tracker
-app.delete('/api/trackers/:id', auth, (req, res) => {
+app.delete('/api/trackers/:id', auth, async (req, res) => {
   const trackerId = req.params.id;
   
   try {
-    const del = db.prepare('DELETE FROM trackers WHERE tracker_id = :trackerId');
-    del.run({ ':trackerId': trackerId });
-    
-    // Also delete associated logs
-    const delLogs = db.prepare('DELETE FROM logs WHERE tracker_id = :trackerId');
-    delLogs.run({ ':trackerId': trackerId });
-    
-    saveDatabase();
+    await pool.query('DELETE FROM trackers WHERE tracker_id = $1', [trackerId]);
+    await pool.query('DELETE FROM logs WHERE tracker_id = $1', [trackerId]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete tracker' });
