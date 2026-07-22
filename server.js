@@ -311,27 +311,61 @@ function fetchJson(url) {
 
 async function getGeoInfoForIp(ip) {
   if (!ip || ip === 'Unknown') return null;
-  const endpoints = [
-    `https://ipwhois.app/json/${encodeURIComponent(ip)}`,
-    `https://ipapi.co/${encodeURIComponent(ip)}/json/`
+
+  const providers = [
+    async () => {
+      const res = await fetchJson(
+        `https://ipapi.co/${encodeURIComponent(ip)}/json/`
+      );
+
+      if (res && !res.error && res.ip) {
+        return {
+          ip: res.ip,
+          country: res.country_name || res.country || 'Unknown',
+          city: res.city || 'Unknown',
+          isp: res.org || 'Unknown',
+          lat: res.latitude ?? null,
+          lon: res.longitude ?? null
+        };
+      }
+
+      throw new Error("ipapi failed");
+    },
+
+    async () => {
+      const res = await fetchJson(
+        `https://ipwhois.app/json/${encodeURIComponent(ip)}`
+      );
+
+      if (res && res.success !== false && res.ip) {
+        return {
+          ip: res.ip,
+          country: res.country || 'Unknown',
+          city: res.city || 'Unknown',
+          isp: res.isp || res.connection?.isp || 'Unknown',
+          lat: res.latitude ?? null,
+          lon: res.longitude ?? null
+        };
+      }
+
+      throw new Error("ipwhois failed");
+    }
   ];
 
-  for (const url of endpoints) {
+  for (const provider of providers) {
     try {
-      const data = await fetchJson(url);
-      if (!data || !data.ip) continue;
-      return {
-        ip:      data.ip,
-        country: data.country_name || data.country || 'Unknown',
-        city:    data.city || 'Unknown',
-        isp:     data.org || data.isp || 'Unknown',
-        lat:     data.latitude ?? data.lat ?? null,
-        lon:     data.longitude ?? data.lon ?? null
-      };
+      const result = await provider();
+
+      console.log("GEO FOUND:", result);
+
+      return result;
+
     } catch (err) {
-      console.warn('Server-side geo lookup failed for', url, err.message);
+      console.warn("Geo provider failed:", err.message);
     }
   }
+
+  console.warn("All geo providers failed for:", ip);
   return null;
 }
 
