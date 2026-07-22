@@ -394,17 +394,22 @@ async function initDatabase() {
       tracker_id      text PRIMARY KEY,
       name            text NOT NULL,
       destination_url text NOT NULL,
-      created_at      timestamptz NOT NULL DEFAULT now()
+      created_at      timestamptz NOT NULL DEFAULT now(),
+      updated_at      timestamptz NOT NULL DEFAULT now()
     );
 `);
 
 try {
   console.log("Running trackers migration...");
 
+  console.log("DATABASE:", process.env.DATABASE_URL ? "gevonden" : "NIET gevonden");
+
   await pool.query(`
     ALTER TABLE trackers
     ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
   `);
+
+  console.log("updated_at column checked");
 
   await pool.query(`
     UPDATE trackers
@@ -413,8 +418,9 @@ try {
   `);
 
   console.log("Trackers migration completed.");
+
 } catch (err) {
-  console.error("Trackers migration failed:", err.message);
+  console.error("Trackers migration failed:", err);
 }
 
     await pool.query(`
@@ -479,7 +485,7 @@ async function writeTrackersFile(trackers) {
 async function loadTrackers() {
   if (useDb) {
     const { rows } = await pool.query(
-      'SELECT tracker_id, name, destination_url, created_at FROM trackers ORDER BY created_at DESC'
+      'SELECT tracker_id, name, destination_url, created_at, updated_at  FROM trackers ORDER BY created_at DESC'
     );
     return rows;
   }
