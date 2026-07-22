@@ -20,18 +20,15 @@ const session      = require('express-session');
 const pgSession    = require('connect-pg-simple')(session);
 const helmet       = require('helmet');
 const rateLimit    = require('express-rate-limit');
+const compression  = require('compression');
 const fsp          = require('fs').promises;
-const fs           = require('fs');const https      = require('https');const crypto       = require('crypto');
+const fs           = require('fs');
+const https        = require('https');
+const crypto       = require('crypto');
 const path         = require('path');
 const { Pool }     = require('pg');
 
 dotenv.config();
-
-console.log('ENV CHECK:', {
-  DATABASE_URL: Boolean(process.env.DATABASE_URL),
-  DB_SSL: process.env.DB_SSL,
-  NODE_ENV: process.env.NODE_ENV
-});
 
 const app = express();
 app.set('trust proxy', 1);
@@ -48,13 +45,21 @@ function getDbSslConfig() {
   return { rejectUnauthorized: false };
 }
 
-const sessionStore = process.env.DATABASE_URL ? new pgSession({
-  conObject: {
-    connectionString: process.env.DATABASE_URL,
-    ssl: getDbSslConfig()
-  },
-  tableName: 'session'
-}) : null;
+let sessionStore = null;
+try {
+  if (process.env.DATABASE_URL) {
+    sessionStore = new pgSession({
+      conObject: {
+        connectionString: process.env.DATABASE_URL,
+        ssl: getDbSslConfig()
+      },
+      tableName: 'session',
+      createTableIfMissing: true
+    });
+  }
+} catch (error) {
+  console.warn('⚠️  Session store initialization failed, using memory store:', error.message);
+}
 
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet({
@@ -75,20 +80,23 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+app.use(compression());
 app.use(express.static('public'));
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 
 // ── Session management ────────────────────────────────────────────────────────
-app.use(session({  store: sessionStore || undefined,  secret: process.env.SESSION_SECRET || 'change_me_in_production',
+app.use(session({
+  store: sessionStore || undefined,
+  secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
   resave: false,
   saveUninitialized: false,
   name: 'sid',
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    maxAge: 24 * 60 * 60 * 1000
   }
 }));
 
@@ -109,19 +117,18 @@ function requireAuth(req, res, next) {
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'change_me';
 
-if (process.env.ADMIN_USER || process.env.ADMIN_PASS) {
-  console.log('🔐 Admin credentials loaded from environment.');
-} else {
-  console.warn('⚠️ Geen ADMIN_USER/ADMIN_PASS gevonden. Gebruik admin/change_me alleen voor lokale tests.');
+if (process.env.NODE_ENV === 'production' && (ADMIN_USER === 'admin' || ADMIN_PASS === 'change_me')) {
+  console.warn('⚠️  WARNING: Using default admin credentials in production!');
 }
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const geoLimiter = rateLimit({
-  windowMs: 60 * 1000,   // 1 minuut
-  max: 10,               // max 10 log-verzoeken per IP per minuut
+  windowMs: 60 * 1000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Te veel verzoeken. Probeer later opnieuw.' }
+  message: { error: 'Te veel verzoeken. Probeer later opnieuw.' },
+  skip: (req) => isBotUserAgent(req.headers['user-agent'])
 });
 
 const pixelLimiter = rateLimit({
@@ -129,6 +136,15 @@ const pixelLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => isBotUserAgent(req.headers['user-agent'])
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Te veel login pogingen. Probeer over 15 minuten.' }
 });
 
 // ── Constanten ────────────────────────────────────────────────────────────────
@@ -250,11 +266,18 @@ async function initDatabase() {
 
   const config = {
     connectionString: process.env.DATABASE_URL,
-    ssl: getDbSslConfig()
+    ssl: getDbSslConfig(),
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
   };
 
   try {
     pool = new Pool(config);
+    pool.on('error', (err) => {
+      console.error('Unexpected error on idle client', err);
+    });
+
     await pool.query('SELECT 1');
     await pool.query(`
       CREATE TABLE IF NOT EXISTS trackers (
@@ -295,6 +318,10 @@ async function initDatabase() {
         is_pixel      boolean     DEFAULT false
       );
     `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_tracker_id ON logs(tracker_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_ip ON logs(ip)`);
+    
     useDb = true;
     console.log('✅ Postgres connectie actief. Opslag via database.');
   } catch (error) {
@@ -665,7 +692,7 @@ app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'views/login.html'));
 });
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', authLimiter, (req, res) => {
   const { username, password } = req.body;
   const isJson = req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
 
@@ -718,10 +745,57 @@ app.get('/:trackerId', async (req, res, next) => {
   await handleTrackerRedirect(trackerId, res);
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    database: useDb ? 'connected' : 'fallback',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// ── Graceful shutdown ───────────────────────────────────────────────────────────
+const gracefulShutdown = async (signal) => {
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
+  
+  if (pool) {
+    console.log('Closing database pool...');
+    await pool.end();
+  }
+  
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // ── Opstarten ─────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 initDatabase().then(() => {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`🚀 𝐑𝟑𝐃𝐈𝐑𝟑𝐂𝐓 draait op poort ${PORT}`);
   });
+
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`❌ Poort ${PORT} is al in gebruik.`);
+    } else {
+      console.error('❌ Server error:', error);
+    }
+    process.exit(1);
+  });
+}).catch(err => {
+  console.error('❌ Failed to initialize:', err);
+  process.exit(1);
 });
