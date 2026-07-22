@@ -394,8 +394,7 @@ async function initDatabase() {
         tracker_id    text        PRIMARY KEY,
         name          text        NOT NULL,
         destination_url text      NOT NULL,
-        created_at    timestamptz NOT NULL DEFAULT now(),
-        updated_at    timestamptz NOT NULL DEFAULT now()
+        created_at    timestamptz NOT NULL DEFAULT now()
       );
     `);
     await pool.query(`
@@ -460,7 +459,7 @@ async function writeTrackersFile(trackers) {
 async function loadTrackers() {
   if (useDb) {
     const { rows } = await pool.query(
-      'SELECT tracker_id, name, destination_url, created_at, updated_at FROM trackers ORDER BY created_at DESC'
+      'SELECT tracker_id, name, destination_url, created_at FROM trackers ORDER BY created_at DESC'
     );
     return rows;
   }
@@ -482,12 +481,11 @@ async function loadTrackerById(trackerId) {
 async function saveTracker({ tracker_id, name, destination_url }) {
   if (useDb) {
     await pool.query(`
-      INSERT INTO trackers (tracker_id, name, destination_url, created_at, updated_at)
-      VALUES ($1, $2, $3, now(), now())
+      INSERT INTO trackers (tracker_id, name, destination_url, created_at)
+      VALUES ($1, $2, $3, now())
       ON CONFLICT (tracker_id) DO UPDATE SET
         name            = EXCLUDED.name,
-        destination_url = EXCLUDED.destination_url,
-        updated_at      = now();
+        destination_url = EXCLUDED.destination_url;
     `, [tracker_id, name, destination_url]);
     return;
   }
