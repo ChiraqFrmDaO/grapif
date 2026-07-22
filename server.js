@@ -391,33 +391,32 @@ async function initDatabase() {
     await pool.query('SELECT 1');
     await pool.query(`
       CREATE TABLE IF NOT EXISTS trackers (
-        tracker_id    text        PRIMARY KEY,
-        name          text        NOT NULL,
-        destination_url text      NOT NULL,
-        created_at    timestamptz NOT NULL DEFAULT now(),
-      );
-    `);
+      tracker_id      text PRIMARY KEY,
+      name            text NOT NULL,
+      destination_url text NOT NULL,
+      created_at      timestamptz NOT NULL DEFAULT now()
+    );
+`);
 
-    try {
-      console.log("Running migration: add updated_at...");
-      await pool.query(`
-        ALTER TABLE trackers
-        ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
-      `);
-      console.log("Migration completed.");
-    } catch (err) {
-      console.error("Migration failed:", err);
-    }
+try {
+  console.log("Running trackers migration...");
 
-    try {
-      await pool.query(`
-        UPDATE trackers
-        SET updated_at = created_at
-        WHERE updated_at IS NULL;
-      `);
-    } catch (err) {
-      console.error("Update migration failed:", err);
-    }
+  await pool.query(`
+    ALTER TABLE trackers
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+  `);
+
+  await pool.query(`
+    UPDATE trackers
+    SET updated_at = created_at
+    WHERE updated_at IS NULL;
+  `);
+
+  console.log("Trackers migration completed.");
+} catch (err) {
+  console.error("Trackers migration failed:", err.message);
+}
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS "session" (
         sid varchar PRIMARY KEY NOT NULL,
@@ -507,6 +506,7 @@ async function saveTracker({ tracker_id, name, destination_url }) {
       ON CONFLICT (tracker_id) DO UPDATE SET
         name            = EXCLUDED.name,
         destination_url = EXCLUDED.destination_url;
+        updated_at      = now();
     `, [tracker_id, name, destination_url]);
     return;
   }
