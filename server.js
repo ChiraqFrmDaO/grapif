@@ -500,16 +500,16 @@ async function loadTrackerById(trackerId) {
 
 async function saveTracker({ tracker_id, name, destination_url }) {
   if (useDb) {
-    await pool.query(`
-      INSERT INTO trackers (tracker_id, name, destination_url, created_at)
-      VALUES ($1, $2, $3, now())
-      ON CONFLICT (tracker_id) DO UPDATE SET
-        name            = EXCLUDED.name,
-        destination_url = EXCLUDED.destination_url;
-        updated_at      = now();
-    `, [tracker_id, name, destination_url]);
-    return;
-  }
+      await pool.query(`
+        INSERT INTO trackers (tracker_id, name, destination_url, created_at)
+        VALUES ($1, $2, $3, now())
+        ON CONFLICT (tracker_id) DO UPDATE SET
+          name            = EXCLUDED.name,
+          destination_url = EXCLUDED.destination_url,
+          updated_at      = now();
+      `, [tracker_id, name, destination_url]);
+      return;
+    }
 
   const trackers    = await readTrackersFile();
   const existingIdx = trackers.findIndex(t => t.tracker_id === tracker_id);
