@@ -37,6 +37,10 @@ const app = express();
 app.set('trust proxy', 1);
 
 function getDbSslConfig() {
+  // Render PostgreSQL always requires SSL
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('render.com')) {
+    return { rejectUnauthorized: false };
+  }
   const value = String(process.env.DB_SSL || '').trim().toLowerCase();
   if (['false', '0', 'no', 'off', 'disable'].includes(value)) {
     return false;
