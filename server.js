@@ -418,7 +418,7 @@ try {
   `);
 
   console.log("Trackers migration completed.");
-
+  
 } catch (err) {
   console.error("Trackers migration failed:", err);
 }
@@ -456,6 +456,11 @@ try {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_tracker_id ON logs(tracker_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_ip ON logs(ip)`);
+
+    await pool.query(`
+      ALTER TABLE logs
+      ADD COLUMN IF NOT EXISTS tracker_name text;
+    `);
     
     useDb = true;
     console.log('✅ Postgres connectie actief. Opslag via database.');
