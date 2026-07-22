@@ -394,8 +394,20 @@ async function initDatabase() {
         tracker_id    text        PRIMARY KEY,
         name          text        NOT NULL,
         destination_url text      NOT NULL,
-        created_at    timestamptz NOT NULL DEFAULT now()
+        created_at    timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
       );
+    `);
+
+    await pool.query(`
+      ALTER TABLE trackers
+      ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+    `);
+
+    await pool.query(`
+      UPDATE trackers
+      SET updated_at = created_at
+      WHERE updated_at IS NULL;
     `);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS "session" (
