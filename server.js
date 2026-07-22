@@ -395,20 +395,29 @@ async function initDatabase() {
         name          text        NOT NULL,
         destination_url text      NOT NULL,
         created_at    timestamptz NOT NULL DEFAULT now(),
-        updated_at timestamptz NOT NULL DEFAULT now()
       );
     `);
 
-    await pool.query(`
-      ALTER TABLE trackers
-      ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
-    `);
+    try {
+      console.log("Running migration: add updated_at...");
+      await pool.query(`
+        ALTER TABLE trackers
+        ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+      `);
+      console.log("Migration completed.");
+    } catch (err) {
+      console.error("Migration failed:", err);
+    }
 
-    await pool.query(`
-      UPDATE trackers
-      SET updated_at = created_at
-      WHERE updated_at IS NULL;
-    `);
+    try {
+      await pool.query(`
+        UPDATE trackers
+        SET updated_at = created_at
+        WHERE updated_at IS NULL;
+      `);
+    } catch (err) {
+      console.error("Update migration failed:", err);
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS "session" (
         sid varchar PRIMARY KEY NOT NULL,
