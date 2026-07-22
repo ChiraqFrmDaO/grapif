@@ -853,6 +853,38 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Metrics endpoint (for monitoring)
+app.get('/metrics', requireAuth, async (req, res) => {
+  try {
+    const summary = await getSummary();
+    const uptime = process.uptime();
+    const memory = process.memoryUsage();
+    
+    successResponse(res, {
+      uptime: {
+        seconds: uptime,
+        human: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s`
+      },
+      memory: {
+        rss: Math.round(memory.rss / 1024 / 1024) + ' MB',
+        heapTotal: Math.round(memory.heapTotal / 1024 / 1024) + ' MB',
+        heapUsed: Math.round(memory.heapUsed / 1024 / 1024) + ' MB',
+        external: Math.round(memory.external / 1024 / 1024) + ' MB'
+      },
+      database: {
+        connected: useDb,
+        type: useDb ? 'postgresql' : 'file'
+      },
+      statistics: summary,
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch
+    });
+  } catch (error) {
+    errorResponse(res, error);
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
