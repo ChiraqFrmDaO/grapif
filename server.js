@@ -27,6 +27,8 @@ const https        = require('https');
 const crypto       = require('crypto');
 const path         = require('path');
 const { Pool }     = require('pg');
+const requestId    = require('express-request-id');
+const cors         = require('cors');
 
 dotenv.config();
 
@@ -80,8 +82,33 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+app.use(requestId());
 app.use(compression());
-app.use(express.static('public'));
+
+// CORS configuration
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
+  credentials: true,
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const logLevel = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+    console.log(`[${logLevel.toUpperCase()}] ${req.method} ${req.path} ${res.statusCode} ${duration}ms - ${req.id}`);
+  });
+  next();
+});
+
+app.use(express.static('public', {
+  maxAge: '1d',
+  etag: true,
+  lastModified: true
+}));
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 
