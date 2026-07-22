@@ -29,11 +29,94 @@ const path         = require('path');
 const { Pool }     = require('pg');
 const requestId    = require('express-request-id');
 const cors         = require('cors');
+const Joi          = require('joi');
 
 dotenv.config();
 
 const app = express();
 app.set('trust proxy', 1);
+
+// ── Custom Error Classes ──────────────────────────────────────────────────────────
+class AppError extends Error {
+  constructor(message, statusCode, code = 'INTERNAL_ERROR') {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+    this.isOperational = true;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+class ValidationError extends AppError {
+  constructor(message, details = []) {
+    super(message, 400, 'VALIDATION_ERROR');
+    this.details = details;
+  }
+}
+
+class AuthenticationError extends AppError {
+  constructor(message = 'Authentication failed') {
+    super(message, 401, 'AUTH_ERROR');
+  }
+}
+
+class NotFoundError extends AppError {
+  constructor(message = 'Resource not found') {
+    super(message, 404, 'NOT_FOUND');
+  }
+}
+
+// ── Validation Schemas ───────────────────────────────────────────────────────────
+const trackerSchema = Joi.object({
+  tracker_id: Joi.string().alphanum().min(1).max(32).optional(),
+  name: Joi.string().min(1).max(100).required(),
+  destination_url: Joi.string().uri({ scheme: 'https' }).required()
+});
+
+const loginSchema = Joi.object({
+  username: Joi.string().min(1).max(100).required(),
+  password: Joi.string().min(1).max(200).required()
+});
+
+const geoLogSchema = Joi.object({
+  tracker_id: Joi.string().required(),
+  ip: Joi.string().ip().optional(),
+  country: Joi.string().optional(),
+  city: Joi.string().optional(),
+  isp: Joi.string().optional(),
+  lat: Joi.number().min(-90).max(90).optional(),
+  lon: Joi.number().min(-180).max(180).optional()
+});
+
+// ── Response Helpers ─────────────────────────────────────────────────────────────
+function successResponse(res, data, message = 'Success') {
+  res.json({
+    success: true,
+    message,
+    data,
+    timestamp: new Date().toISOString()
+  });
+}
+
+function errorResponse(res, error) {
+  if (error instanceof AppError) {
+    return res.status(error.statusCode).json({
+      success: false,
+      error: error.message,
+      code: error.code,
+      details: error.details || undefined,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  console.error('Unexpected error:', error);
+  return res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+    code: 'INTERNAL_ERROR',
+    timestamp: new Date().toISOString()
+  });
+}
 
 function getDbSslConfig() {
   // Render PostgreSQL always requires SSL
@@ -647,48 +730,37 @@ app.post('/api/log-geo', geoLimiter, async (req, res) => {
   }
 });
 
-// Tracker opslaan (met URL-validatie + reserved-ID check)
+// Tracker opslaan (met Joi validatie)
 app.post('/api/save-tracker', requireAuth, async (req, res) => {
-  let { tracker_id, name, destination_url } = req.body;
-
-  // Genereer een ID als er geen is opgegeven (admin laat het veld leeg)
-  if (!tracker_id) tracker_id = generateTrackerId();
-
-  if (!name || !destination_url) {
-    return res.status(400).json({ error: 'Naam en doel-URL zijn verplicht.' });
-  }
-
-  // Valideer URL
-  if (!isValidHttpsUrl(destination_url)) {
-    return res.status(400).json({ error: 'Doel-URL moet beginnen met https://' });
-  }
-
-  // Blokkeer reserved IDs
-  if (RESERVED_IDS.has(tracker_id.toLowerCase())) {
-    return res.status(400).json({ error: 'Dit tracker-ID is gereserveerd.' });
-  }
-
-  // Beperk ID-formaat: alleen alfanumeriek + koppelteken, max 32 tekens
-  if (!/^[a-zA-Z0-9-]{1,32}$/.test(tracker_id)) {
-    return res.status(400).json({ error: 'Ongeldig tracker-ID formaat.' });
-  }
-
   try {
+    const { error, value } = trackerSchema.validate(req.body);
+    if (error) {
+      throw new ValidationError('Invalid input', error.details);
+    }
+
+    let { tracker_id, name, destination_url } = value;
+
+    // Genereer een ID als er geen is opgegeven
+    if (!tracker_id) tracker_id = generateTrackerId();
+
+    // Blokkeer reserved IDs
+    if (RESERVED_IDS.has(tracker_id.toLowerCase())) {
+      throw new ValidationError('Dit tracker-ID is gereserveerd.');
+    }
+
     await saveTracker({ tracker_id, name, destination_url });
     console.log(`✅ Tracker opgeslagen: ${tracker_id}`);
-    res.json({ success: true, tracker_id, link: `/${tracker_id}` });
+    successResponse(res, { tracker_id, link: `/${tracker_id}` }, 'Tracker created successfully');
   } catch (error) {
-    console.error('Save tracker error:', error);
-    res.status(500).json({ error: 'Opslaan mislukt.' });
+    errorResponse(res, error);
   }
 });
 
 app.get('/api/trackers', requireAuth, async (req, res) => {
   try {
-    res.json(await loadTrackers());
+    successResponse(res, await loadTrackers());
   } catch (error) {
-    console.error('Load trackers error:', error);
-    res.status(500).json({ error: 'Load failed' });
+    errorResponse(res, error);
   }
 });
 

@@ -16,6 +16,7 @@
     "express-rate-limit": "^7.1.5",
     "compression": "^1.7.4",
     "express-request-id": "^1.4.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "joi": "^17.13.3"
   }
 }
