@@ -507,8 +507,8 @@ async function loadTrackerById(trackerId) {
 async function saveTracker({ tracker_id, name, destination_url }) {
   if (useDb) {
       await pool.query(`
-        INSERT INTO trackers (tracker_id, name, destination_url, created_at)
-        VALUES ($1, $2, $3, now())
+        INSERT INTO trackers (tracker_id, name, destination_url, created_at, updated_at)
+        VALUES ($1, $2, $3, now(), now())
         ON CONFLICT (tracker_id) DO UPDATE SET
           name            = EXCLUDED.name,
           destination_url = EXCLUDED.destination_url,

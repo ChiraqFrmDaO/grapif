@@ -496,70 +496,133 @@
     }
   }
 
-  async function loadTrackersList() {
-    const container = document.getElementById('trackersList');
-    try {
-      const res      = await fetch('/api/trackers', { credentials: 'same-origin' });
-      const trackers = await res.json();
+async function loadTrackersList() {
+  const container = document.getElementById('trackersList');
 
-      if (!trackers.length) {
-        container.innerHTML = '';
-        const msg = document.createElement('p');
-        msg.style.cssText = 'color:var(--muted);padding:12px;font-size:.85rem;';
-        msg.textContent    = 'Geen actieve trackers gevonden.';
-        container.appendChild(msg);
-        return;
+  try {
+    const res = await fetch('/api/trackers?t=' + Date.now(), {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache'
       }
+    });
 
-      container.innerHTML = '';
-      trackers.forEach(tracker => {
-        const url  = `${window.location.origin}/${tracker.tracker_id}`;
-        const card = document.createElement('div');
-        card.className = 'tracker-card';
+    const response = await res.json();
 
-        // Alle tekst via textContent — geen XSS-risico
-        const h3   = document.createElement('h3');
-        h3.textContent = tracker.name;
+    console.log("TRACKERS RAW RESPONSE:", response);
+    console.log("TRACKERS DATA:", response.data);
 
-        const metaDest = document.createElement('div');
-        metaDest.className = 'meta';
-        metaDest.textContent = `Bestemming: ${tracker.destination_url}`;
+    const trackers = Array.isArray(response.data)
+      ? response.data
+      : [];
+    container.innerHTML = '';
 
-        const metaLink = document.createElement('div');
-        metaLink.className = 'meta';
-        metaLink.textContent = `Link: ${url}`;
-
-        const actions = document.createElement('div');
-        actions.className = 'actions';
-
-        const btnOpen = document.createElement('button');
-        btnOpen.className = 'btn btn-secondary btn-sm';
-        btnOpen.textContent = '↗ Open';
-        btnOpen.addEventListener('click', () => window.open(url, '_blank'));
-
-        const btnLogs = document.createElement('button');
-        btnLogs.className = 'btn btn-secondary btn-sm';
-        btnLogs.textContent = '📍 Logdetails';
-        btnLogs.addEventListener('click', () => showTrackerLogDetails(tracker.tracker_id, tracker.name));
-
-        const btnDel = document.createElement('button');
-        btnDel.className = 'btn btn-danger btn-sm';
-        btnDel.textContent = '✕ Verwijderen';
-        btnDel.addEventListener('click', () => deleteTracker(tracker.tracker_id, tracker.name));
-
-        actions.append(btnOpen, btnLogs, btnDel);
-        card.append(h3, metaDest, metaLink, actions);
-        container.appendChild(card);
-      });
-    } catch (err) {
-      console.error('Trackers laden mislukt:', err);
-      container.innerHTML = '';
+    if (!Array.isArray(trackers) || trackers.length === 0) {
       const msg = document.createElement('p');
-      msg.style.cssText = 'color:var(--red);padding:12px;font-size:.85rem;';
-      msg.textContent    = 'Fout bij laden van trackers.';
+      msg.style.cssText =
+        'color:var(--muted);padding:12px;font-size:.85rem;';
+      msg.textContent = 'Geen actieve trackers gevonden.';
       container.appendChild(msg);
+      return;
     }
+
+
+    trackers.forEach(tracker => {
+
+      const url = `${window.location.origin}/${tracker.tracker_id}`;
+
+      const card = document.createElement('div');
+      card.className = 'tracker-card';
+
+
+      const h3 = document.createElement('h3');
+      h3.textContent = tracker.name;
+
+
+      const id = document.createElement('div');
+      id.className = 'meta';
+      id.textContent = `ID: ${tracker.tracker_id}`;
+
+
+      const dest = document.createElement('div');
+      dest.className = 'meta';
+      dest.textContent =
+        `Bestemming: ${tracker.destination_url}`;
+
+
+      const link = document.createElement('div');
+      link.className = 'meta';
+      link.textContent =
+        `Link: ${url}`;
+
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+
+
+      const openBtn = document.createElement('button');
+      openBtn.className = 'btn btn-secondary btn-sm';
+      openBtn.textContent = '↗ Open';
+      openBtn.onclick = () =>
+        window.open(url, '_blank');
+
+
+      const logsBtn = document.createElement('button');
+      logsBtn.className = 'btn btn-secondary btn-sm';
+      logsBtn.textContent = '📍 Logdetails';
+      logsBtn.onclick = () =>
+        showTrackerLogDetails(
+          tracker.tracker_id,
+          tracker.name
+        );
+
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger btn-sm';
+      delBtn.textContent = '✕ Verwijderen';
+      delBtn.onclick = () =>
+        deleteTracker(
+          tracker.tracker_id,
+          tracker.name
+        );
+
+
+      actions.append(
+        openBtn,
+        logsBtn,
+        delBtn
+      );
+
+
+      card.append(
+        h3,
+        id,
+        dest,
+        link,
+        actions
+      );
+
+
+      container.appendChild(card);
+
+    });
+
+
+  } catch (err) {
+
+    console.error(
+      'Trackers laden mislukt:',
+      err
+    );
+
+    container.innerHTML = `
+      <p style="color:var(--red);padding:12px;">
+        Fout bij laden trackers
+      </p>
+    `;
   }
+}
 
   async function loadLogs() {
     const tbody = document.getElementById('logsBody');
@@ -787,9 +850,11 @@
   }
 
   // ── Initieel laden ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
   loadSummary();
   loadTrackersList();
   loadLogs();
+});
 </script>
 </body>
 </html>
