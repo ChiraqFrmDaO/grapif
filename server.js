@@ -730,9 +730,15 @@ app.post('/api/log-geo', geoLimiter, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Geo save error:', error);
-    res.status(500).json({ error: 'Save failed' });
-  }
+        console.error("========== GEO ERROR ==========");
+        console.error(error);
+        console.error(error.stack);
+
+        res.status(500).json({
+            message: error.message,
+            stack: error.stack
+         });
+    }
 });
 
 // Tracker opslaan (met Joi validatie)
