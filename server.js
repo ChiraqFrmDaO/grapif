@@ -430,9 +430,26 @@ async function initDatabase() {
         referer       text,
         latitude      numeric,
         longitude     numeric,
-        is_pixel      boolean     DEFAULT false
+        is_pixel      boolean DEFAULT false
       );
     `);
+
+// Voeg dit DIRECT hieronder toe
+    await pool.query(`
+      ALTER TABLE logs
+      ADD COLUMN IF NOT EXISTS latitude numeric;
+    `);
+
+    await pool.query(`
+      ALTER TABLE logs
+      ADD COLUMN IF NOT EXISTS longitude numeric;
+    `);
+
+    await pool.query(`
+      ALTER TABLE logs
+      ADD COLUMN IF NOT EXISTS is_pixel boolean DEFAULT false;
+    `);
+
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_tracker_id ON logs(tracker_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_ip ON logs(ip)`);
