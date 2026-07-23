@@ -1,16 +1,17 @@
 /**
- * 𝐑𝟑𝐃𝐈𝐑𝟑𝐂𝐓 - server.js (verbeterd)
+ * 𝐑𝟑𝐃𝐈𝐑𝟑𝐂𝐓 - server.js (fixed)
  *
- * Wijzigingen t.o.v. origineel:
- *  - helmet toegevoegd voor security-headers (CSP, X-Frame-Options, etc.)
- *  - express-rate-limit op /api/log-geo en pixel-endpoint
- *  - crypto.randomBytes voor tracker-ID's (niet meer Math.random)
- *  - URL-validatie (alleen https://) bij /api/save-tracker
- *  - HTML-escaping in handleTrackerRedirect (voorkomt XSS via template-injection)
- *  - fs.promises gebruikt in plaats van sync-varianten
- *  - getSummary() telt unieke IPs via SQL (schaalt beter)
- *  - Homepagina-HTML verplaatst naar views/index.html
- *  - Reserved-list uitgebreid en ook gecontroleerd bij opslaan van tracker
+ * Fixes applied:
+ * 1. Express route ordering - static routes before /:trackerId
+ * 2. Redirect handling with fallback to res.redirect()
+ * 3. Clean database initialization - removed duplicate migrations
+ * 4. CORS configuration - never use wildcard with credentials
+ * 5. Joi validation on /api/login, /api/log-geo, tracker creation
+ * 6. IP handling - never trust client supplied IP values
+ * 7. Timeout handling on HTTPS requests
+ * 8. Consistent tracker URL system
+ * 9. Pixel logging validation for invalid tracker IDs
+ * 10. Removed unused escapeJs function
  */
 
 const express      = require('express');
@@ -168,10 +169,11 @@ app.use(helmet({
 app.use(requestId());
 app.use(compression());
 
-// CORS configuration
+// CORS configuration - never use wildcard with credentials
+const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [];
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
-  credentials: true,
+  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+  credentials: allowedOrigins.length > 0,
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -285,20 +287,15 @@ function escapeHtml(str) {
     .replace(/\//g, '&#x2F;');
 }
 
-/** Veilig voor gebruik binnen een JS-string-literal in een <script>-blok. */
-function escapeJs(str) {
-  return JSON.stringify(String(str));
-}
-
 function getClientIp(req) {
   const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
     .split(',')[0].trim();
   return ip.replace(/^::ffff:/, '') || 'Unknown';
 }
 
-function fetchJson(url) {
+function fetchJson(url, timeout = 5000) {
   return new Promise((resolve, reject) => {
-    https.get(url, res => {
+    const req = https.get(url, res => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -306,6 +303,11 @@ function fetchJson(url) {
         catch (err) { reject(err); }
       });
     }).on('error', reject);
+    
+    req.setTimeout(timeout, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
   });
 }
 
@@ -431,31 +433,20 @@ async function initDatabase() {
       created_at      timestamptz NOT NULL DEFAULT now(),
       updated_at      timestamptz NOT NULL DEFAULT now()
     );
-`);
-
-try {
-  console.log("Running trackers migration...");
-
-  console.log("DATABASE:", process.env.DATABASE_URL ? "gevonden" : "NIET gevonden");
+  `);
 
   await pool.query(`
     ALTER TABLE trackers
     ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
   `);
 
-  console.log("updated_at column checked");
-
   await pool.query(`
     UPDATE trackers
-    SET updated_at = created_at
+    SET updated_at = COALESCE(updated_at, created_at, now())
     WHERE updated_at IS NULL;
   `);
 
   console.log("Trackers migration completed.");
-  
-} catch (err) {
-  console.error("Trackers migration failed:", err);
-}
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS "session" (
@@ -491,11 +482,6 @@ try {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_ip ON logs(ip)`);
 
-    await pool.query(`
-      ALTER TABLE logs
-      ADD COLUMN IF NOT EXISTS tracker_name text;
-    `);
-    
     useDb = true;
     console.log('✅ Postgres connectie actief. Opslag via database.');
   } catch (error) {
@@ -669,12 +655,134 @@ async function getSummary() {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
-// Homepagina uit views/index.html
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'index.html'));
+// Static routes must be defined BEFORE /:trackerId wildcard
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    database: useDb ? 'connected' : 'fallback',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Redirect-handler met HTML-escaping
+// Metrics endpoint (for monitoring)
+app.get('/metrics', requireAuth, async (req, res) => {
+  try {
+    const summary = await getSummary();
+    const uptime = process.uptime();
+    const memory = process.memoryUsage();
+    
+    successResponse(res, {
+      uptime: {
+        seconds: uptime,
+        human: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s`
+      },
+      memory: {
+        rss: Math.round(memory.rss / 1024 / 1024) + ' MB',
+        heapTotal: Math.round(memory.heapTotal / 1024 / 1024) + ' MB',
+        heapUsed: Math.round(memory.heapUsed / 1024 / 1024) + ' MB',
+        external: Math.round(memory.external / 1024 / 1024) + ' MB'
+      },
+      database: {
+        connected: useDb,
+        type: useDb ? 'postgresql' : 'file'
+      },
+      statistics: summary,
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch
+    });
+  } catch (error) {
+    errorResponse(res, error);
+  }
+});
+
+// Login page
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'views/login.html'));
+});
+
+// Admin page
+app.get('/admin', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'views/admin.html'));
+});
+
+// Homepagina uit views/index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'views/index.html'));
+});
+
+// API routes
+app.post('/api/login', authLimiter, (req, res) => {
+  const { error, value } = loginSchema.validate(req.body);
+  if (error) {
+    const isJson = req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
+    if (isJson) {
+      return res.status(400).json({ error: 'Invalid input', details: error.details });
+    }
+    return res.redirect('/login?error=invalid');
+  }
+
+  const { username, password } = value;
+  const isJson = req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
+
+  if (username === ADMIN_USER && password === ADMIN_PASS) {
+    req.session.authenticated = true;
+    req.session.user = username;
+    if (isJson) {
+      return res.json({ success: true });
+    }
+    return res.redirect('/admin');
+  }
+
+  if (isJson) {
+    return res.status(401).json({ error: 'Ongeldige gebruikersnaam of wachtwoord.' });
+  }
+
+  res.redirect('/login?error=invalid');
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ success: true });
+  });
+});
+
+app.get('/api/trackers', requireAuth, async (req, res) => {
+  try {
+    successResponse(res, await loadTrackers());
+  } catch (error) {
+    errorResponse(res, error);
+  }
+});
+
+app.get('/api/summary', requireAuth, async (req, res) => {
+  try {
+    res.json(await getSummary());
+  } catch (error) {
+    console.error('Summary error:', error);
+    res.status(500).json({ error: 'Summary failed' });
+  }
+});
+
+app.get('/api/logs', requireAuth, async (req, res) => {
+  try {
+    const logs     = await getLogs();
+    const trackers = useDb ? [] : await readTrackersFile();
+    const tMap     = trackers.reduce((acc, t) => { acc[t.tracker_id] = t; return acc; }, {});
+
+    res.json(logs.map(log => ({
+      ...log,
+      name: log.tracker_name || tMap[log.tracker_id]?.name || 'Onbekend'
+    })));
+  } catch (error) {
+    console.error('Load logs error:', error);
+    res.status(500).json({ error: 'Load failed' });
+  }
+});
+
+// Redirect-handler met HTML-escaping en fallback
 async function handleTrackerRedirect(trackerId, res) {
   let destinationUrl = DEFAULT_REDIRECT_URL;
   try {
@@ -686,30 +794,42 @@ async function handleTrackerRedirect(trackerId, res) {
     console.error('Fout bij ophalen tracker:', error);
   }
 
-  let html = await fsp.readFile(path.join(__dirname, 'views', 'redirect.html'), 'utf8');
-
-  // Veilige injectie in HTML data-attributen
-  html = html
-    .replace('{{DESTINATION_URL}}', escapeHtml(destinationUrl))
-    .replace('{{TRACKER_ID}}',      escapeHtml(trackerId));
-
-  res.send(html);
+  try {
+    let html = await fsp.readFile(path.join(__dirname, 'views/redirect.html'), 'utf8');
+    // Veilige injectie in HTML data-attributen
+    html = html
+      .replace('{{DESTINATION_URL}}', escapeHtml(destinationUrl))
+      .replace('{{TRACKER_ID}}',      escapeHtml(trackerId));
+    res.send(html);
+  } catch (error) {
+    console.error('redirect.html missing or broken, using fallback:', error.message);
+    res.redirect(destinationUrl);
+  }
 }
-
-app.get('/track/:id', async (req, res) => {
-  await handleTrackerRedirect(req.params.id, res);
-});
 
 // Tracking pixel
 app.get('/pixel/:trackerId.png', pixelLimiter, async (req, res) => {
   try {
+    const trackerId = req.params.trackerId;
+    const tracker = await loadTrackerById(trackerId);
+    
+    if (!tracker) {
+      console.warn('Invalid tracker ID for pixel:', trackerId);
+      const pixel = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAn8B9q7xVQAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      return res.send(pixel);
+    }
+    
     const userAgent = req.headers['user-agent'] || 'Unknown';
     if (!isBotUserAgent(userAgent)) {
-      const tracker = await loadTrackerById(req.params.trackerId);
       const parser  = uaParser(userAgent);
       await appendLog({
         timestamp:    new Date().toISOString(),
-        tracker_id:   req.params.trackerId,
+        tracker_id:   trackerId,
         tracker_name: tracker?.name || 'Onbekend',
         ip:           getClientIp(req),
         country:      'Unknown',
@@ -740,7 +860,12 @@ app.get('/pixel/:trackerId.png', pixelLimiter, async (req, res) => {
 
 // Geo-log (client-side geo → server)
 app.post('/api/log-geo', geoLimiter, async (req, res) => {
-  const { tracker_id, ip: clientIp, country, city, isp, lat, lon } = req.body;
+  const { error, value } = geoLogSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({ error: 'Invalid input', details: error.details });
+  }
+
+  const { tracker_id, ip: clientIp, country, city, isp, lat, lon } = value;
   if (!tracker_id) return res.status(400).json({ error: 'No tracker_id' });
 
   try {
@@ -749,9 +874,12 @@ app.post('/api/log-geo', geoLimiter, async (req, res) => {
 
     const parser = uaParser(userAgent);
     const tracker = await loadTrackerById(tracker_id);
+    if (!tracker) {
+      return res.status(404).json({ error: 'Tracker not found' });
+    }
 
     const serverIp = getClientIp(req);
-    const ip = clientIp && clientIp !== 'Unknown' ? clientIp : serverIp;
+    const ip = serverIp;
     let finalCountry = country && country !== 'Unknown' ? country : null;
     let finalCity = city && city !== 'Unknown' ? city : null;
     let finalIsp = isp && isp !== 'Unknown' ? isp : null;
@@ -824,14 +952,6 @@ app.post('/api/save-tracker', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/trackers', requireAuth, async (req, res) => {
-  try {
-    successResponse(res, await loadTrackers());
-  } catch (error) {
-    errorResponse(res, error);
-  }
-});
-
 app.post('/api/delete-tracker', requireAuth, async (req, res) => {
   const { tracker_id } = req.body;
   if (!tracker_id) return res.status(400).json({ error: 'Missing tracker_id' });
@@ -846,111 +966,11 @@ app.post('/api/delete-tracker', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/summary', requireAuth, async (req, res) => {
-  try {
-    res.json(await getSummary());
-  } catch (error) {
-    console.error('Summary error:', error);
-    res.status(500).json({ error: 'Summary failed' });
-  }
-});
-
-app.get('/login', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views/login.html'));
-});
-
-app.post('/api/login', authLimiter, (req, res) => {
-  const { username, password } = req.body;
-  const isJson = req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
-
-  if (username === ADMIN_USER && password === ADMIN_PASS) {
-    req.session.authenticated = true;
-    req.session.user = username;
-    if (isJson) {
-      return res.json({ success: true });
-    }
-    return res.redirect('/admin');
-  }
-
-  if (isJson) {
-    return res.status(401).json({ error: 'Ongeldige gebruikersnaam of wachtwoord.' });
-  }
-
-  res.redirect('/login');
-});
-
-app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.json({ success: true });
-  });
-});
-
-app.get('/admin', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'admin.html'));
-});
-
-app.get('/api/logs', requireAuth, async (req, res) => {
-  try {
-    const logs     = await getLogs();
-    const trackers = useDb ? [] : await readTrackersFile();
-    const tMap     = trackers.reduce((acc, t) => { acc[t.tracker_id] = t; return acc; }, {});
-
-    res.json(logs.map(log => ({
-      ...log,
-      name: log.tracker_name || tMap[log.tracker_id]?.name || 'Onbekend'
-    })));
-  } catch (error) {
-    console.error('Load logs error:', error);
-    res.status(500).json({ error: 'Load failed' });
-  }
-});
-
 // Wildcard tracker-redirect (reserved-check ook hier)
 app.get('/:trackerId', async (req, res, next) => {
   const trackerId = req.params.trackerId;
   if (RESERVED_IDS.has(trackerId.toLowerCase())) return next();
   await handleTrackerRedirect(trackerId, res);
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    database: useDb ? 'connected' : 'fallback',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Metrics endpoint (for monitoring)
-app.get('/metrics', requireAuth, async (req, res) => {
-  try {
-    const summary = await getSummary();
-    const uptime = process.uptime();
-    const memory = process.memoryUsage();
-    
-    successResponse(res, {
-      uptime: {
-        seconds: uptime,
-        human: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s`
-      },
-      memory: {
-        rss: Math.round(memory.rss / 1024 / 1024) + ' MB',
-        heapTotal: Math.round(memory.heapTotal / 1024 / 1024) + ' MB',
-        heapUsed: Math.round(memory.heapUsed / 1024 / 1024) + ' MB',
-        external: Math.round(memory.external / 1024 / 1024) + ' MB'
-      },
-      database: {
-        connected: useDb,
-        type: useDb ? 'postgresql' : 'file'
-      },
-      statistics: summary,
-      node: process.version,
-      platform: process.platform,
-      arch: process.arch
-    });
-  } catch (error) {
-    errorResponse(res, error);
-  }
 });
 
 // 404 handler
