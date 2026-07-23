@@ -1,19 +1,3 @@
-/**
- * 𝐑𝟑𝐃𝐈𝐑𝟑𝐂𝐓 - server.js (fixed)
- *
- * Fixes applied:
- * 1. Express route ordering - static routes before /:trackerId
- * 2. Redirect handling with fallback to res.redirect()
- * 3. Clean database initialization - removed duplicate migrations
- * 4. CORS configuration - never use wildcard with credentials
- * 5. Joi validation on /api/login, /api/log-geo, tracker creation
- * 6. IP handling - never trust client supplied IP values
- * 7. Timeout handling on HTTPS requests
- * 8. Consistent tracker URL system
- * 9. Pixel logging validation for invalid tracker IDs
- * 10. Removed unused escapeJs function
- */
-
 const express      = require('express');
 const dotenv       = require('dotenv');
 const uaParser     = require('ua-parser-js');
@@ -169,11 +153,10 @@ app.use(helmet({
 app.use(requestId());
 app.use(compression());
 
-// CORS configuration - never use wildcard with credentials
-const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [];
+// CORS configuration
 app.use(cors({
-  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
-  credentials: allowedOrigins.length > 0,
+  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
+  credentials: true,
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -287,15 +270,20 @@ function escapeHtml(str) {
     .replace(/\//g, '&#x2F;');
 }
 
+/** Veilig voor gebruik binnen een JS-string-literal in een <script>-blok. */
+function escapeJs(str) {
+  return JSON.stringify(String(str));
+}
+
 function getClientIp(req) {
   const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
     .split(',')[0].trim();
   return ip.replace(/^::ffff:/, '') || 'Unknown';
 }
 
-function fetchJson(url, timeout = 5000) {
+function fetchJson(url) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, res => {
+    https.get(url, res => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -303,71 +291,32 @@ function fetchJson(url, timeout = 5000) {
         catch (err) { reject(err); }
       });
     }).on('error', reject);
-    
-    req.setTimeout(timeout, () => {
-      req.destroy();
-      reject(new Error('Request timeout'));
-    });
   });
 }
 
 async function getGeoInfoForIp(ip) {
   if (!ip || ip === 'Unknown') return null;
-
-  const providers = [
-    async () => {
-      const res = await fetchJson(
-        `https://ipapi.co/${encodeURIComponent(ip)}/json/`
-      );
-
-      if (res && !res.error && res.ip) {
-        return {
-          ip: res.ip,
-          country: res.country_name || res.country || 'Unknown',
-          city: res.city || 'Unknown',
-          isp: res.org || 'Unknown',
-          lat: res.latitude ?? null,
-          lon: res.longitude ?? null
-        };
-      }
-
-      throw new Error("ipapi failed");
-    },
-
-    async () => {
-      const res = await fetchJson(
-        `https://ipwhois.app/json/${encodeURIComponent(ip)}`
-      );
-
-      if (res && res.success !== false && res.ip) {
-        return {
-          ip: res.ip,
-          country: res.country || 'Unknown',
-          city: res.city || 'Unknown',
-          isp: res.isp || res.connection?.isp || 'Unknown',
-          lat: res.latitude ?? null,
-          lon: res.longitude ?? null
-        };
-      }
-
-      throw new Error("ipwhois failed");
-    }
+  const endpoints = [
+    `https://ipwhois.app/json/${encodeURIComponent(ip)}`,
+    `https://ipapi.co/${encodeURIComponent(ip)}/json/`
   ];
 
-  for (const provider of providers) {
+  for (const url of endpoints) {
     try {
-      const result = await provider();
-
-      console.log("GEO FOUND:", result);
-
-      return result;
-
+      const data = await fetchJson(url);
+      if (!data || !data.ip) continue;
+      return {
+        ip:      data.ip,
+        country: data.country_name || data.country || 'Unknown',
+        city:    data.city || 'Unknown',
+        isp:     data.org || data.isp || 'Unknown',
+        lat:     data.latitude ?? data.lat ?? null,
+        lon:     data.longitude ?? data.lon ?? null
+      };
     } catch (err) {
-      console.warn("Geo provider failed:", err.message);
+      console.warn('Server-side geo lookup failed for', url, err.message);
     }
   }
-
-  console.warn("All geo providers failed for:", ip);
   return null;
 }
 
@@ -427,27 +376,33 @@ async function initDatabase() {
     await pool.query('SELECT 1');
     await pool.query(`
       CREATE TABLE IF NOT EXISTS trackers (
-      tracker_id      text PRIMARY KEY,
-      name            text NOT NULL,
-      destination_url text NOT NULL,
-      created_at      timestamptz NOT NULL DEFAULT now(),
-      updated_at      timestamptz NOT NULL DEFAULT now()
-    );
-  `);
+        tracker_id    text        PRIMARY KEY,
+        name          text        NOT NULL,
+        destination_url text      NOT NULL,
+        created_at    timestamptz NOT NULL DEFAULT now()
+      );
+    `);
 
-  await pool.query(`
-    ALTER TABLE trackers
-    ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
-  `);
+    try {
+      console.log("Running migration: add updated_at...");
+      await pool.query(`
+        ALTER TABLE trackers
+        ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+      `);
+      console.log("Migration completed.");
+    } catch (err) {
+      console.error("Migration failed:", err);
+    }
 
-  await pool.query(`
-    UPDATE trackers
-    SET updated_at = COALESCE(updated_at, created_at, now())
-    WHERE updated_at IS NULL;
-  `);
-
-  console.log("Trackers migration completed.");
-
+    try {
+      await pool.query(`
+        UPDATE trackers
+        SET updated_at = created_at
+        WHERE updated_at IS NULL;
+      `);
+    } catch (err) {
+      console.error("Update migration failed:", err);
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS "session" (
         sid varchar PRIMARY KEY NOT NULL,
@@ -481,7 +436,7 @@ async function initDatabase() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_tracker_id ON logs(tracker_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_ip ON logs(ip)`);
-
+    
     useDb = true;
     console.log('✅ Postgres connectie actief. Opslag via database.');
   } catch (error) {
@@ -510,7 +465,7 @@ async function writeTrackersFile(trackers) {
 async function loadTrackers() {
   if (useDb) {
     const { rows } = await pool.query(
-      'SELECT tracker_id, name, destination_url, created_at, updated_at  FROM trackers ORDER BY created_at DESC'
+      'SELECT tracker_id, name, destination_url, created_at FROM trackers ORDER BY created_at DESC'
     );
     return rows;
   }
@@ -531,16 +486,15 @@ async function loadTrackerById(trackerId) {
 
 async function saveTracker({ tracker_id, name, destination_url }) {
   if (useDb) {
-      await pool.query(`
-        INSERT INTO trackers (tracker_id, name, destination_url, created_at, updated_at)
-        VALUES ($1, $2, $3, now(), now())
-        ON CONFLICT (tracker_id) DO UPDATE SET
-          name            = EXCLUDED.name,
-          destination_url = EXCLUDED.destination_url,
-          updated_at      = now();
-      `, [tracker_id, name, destination_url]);
-      return;
-    }
+    await pool.query(`
+      INSERT INTO trackers (tracker_id, name, destination_url, created_at)
+      VALUES ($1, $2, $3, now())
+      ON CONFLICT (tracker_id) DO UPDATE SET
+        name            = EXCLUDED.name,
+        destination_url = EXCLUDED.destination_url;
+    `, [tracker_id, name, destination_url]);
+    return;
+  }
 
   const trackers    = await readTrackersFile();
   const existingIdx = trackers.findIndex(t => t.tracker_id === tracker_id);
@@ -655,7 +609,245 @@ async function getSummary() {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
-// Static routes must be defined BEFORE /:trackerId wildcard
+// Homepagina uit views/index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'views', 'index.html'));
+});
+
+// Redirect-handler met HTML-escaping
+async function handleTrackerRedirect(trackerId, res) {
+  let destinationUrl = DEFAULT_REDIRECT_URL;
+  try {
+    const tracker = await loadTrackerById(trackerId);
+    if (tracker?.destination_url) {
+      destinationUrl = tracker.destination_url;
+    }
+  } catch (error) {
+    console.error('Fout bij ophalen tracker:', error);
+  }
+
+  let html = await fsp.readFile(path.join(__dirname, 'views', 'redirect.html'), 'utf8');
+
+  // Veilige injectie in HTML data-attributen
+  html = html
+    .replace('{{DESTINATION_URL}}', escapeHtml(destinationUrl))
+    .replace('{{TRACKER_ID}}',      escapeHtml(trackerId));
+
+  res.send(html);
+}
+
+app.get('/track/:id', async (req, res) => {
+  await handleTrackerRedirect(req.params.id, res);
+});
+
+// Tracking pixel
+app.get('/pixel/:trackerId.png', pixelLimiter, async (req, res) => {
+  try {
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+    if (!isBotUserAgent(userAgent)) {
+      const tracker = await loadTrackerById(req.params.trackerId);
+      const parser  = uaParser(userAgent);
+      await appendLog({
+        timestamp:    new Date().toISOString(),
+        tracker_id:   req.params.trackerId,
+        tracker_name: tracker?.name || 'Onbekend',
+        ip:           getClientIp(req),
+        country:      'Unknown',
+        city:         'Unknown',
+        isp:          'Unknown',
+        browser:      parser.browser.name || 'Unknown',
+        os:           parser.os.name      || 'Unknown',
+        device:       parser.device.type  || 'desktop',
+        useragent:    userAgent,
+        referer:      req.headers.referer || 'None',
+        latitude:     null,
+        longitude:    null,
+        is_pixel:     true
+      });
+    }
+  } catch (error) {
+    console.error('Pixel logging error:', error);
+  }
+
+  const pixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAn8B9q7xVQAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.send(pixel);
+});
+
+// Geo-log (client-side geo → server)
+app.post('/api/log-geo', geoLimiter, async (req, res) => {
+  console.log(req.body);
+  const { tracker_id, ip: clientIp, country, city, isp, lat, lon } = req.body;
+  if (!tracker_id) return res.status(400).json({ error: 'No tracker_id' });
+
+  try {
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+    if (isBotUserAgent(userAgent)) return res.json({ success: true });
+
+    const parser = uaParser(userAgent);
+    const tracker = await loadTrackerById(tracker_id);
+
+    const serverIp = getClientIp(req);
+    const ip = clientIp && clientIp !== 'Unknown' ? clientIp : serverIp;
+    let finalCountry = country && country !== 'Unknown' ? country : null;
+    let finalCity = city && city !== 'Unknown' ? city : null;
+    let finalIsp = isp && isp !== 'Unknown' ? isp : null;
+    let finalLat = lat ?? null;
+    let finalLon = lon ?? null;
+
+    if (!finalCountry || !finalCity || !finalIsp) {
+      const geoInfo = await getGeoInfoForIp(ip);
+      if (geoInfo) {
+        finalCountry = finalCountry || geoInfo.country;
+        finalCity    = finalCity    || geoInfo.city;
+        finalIsp     = finalIsp     || geoInfo.isp;
+        finalLat     = finalLat     || geoInfo.lat;
+        finalLon     = finalLon     || geoInfo.lon;
+      }
+    }
+
+    await appendLog({
+      timestamp:    new Date().toISOString(),
+      tracker_id,
+      tracker_name: tracker?.name || 'Onbekend',
+      ip,
+      country:      finalCountry || 'Unknown',
+      city:         finalCity    || 'Unknown',
+      isp:          finalIsp     || 'Unknown',
+      browser:      parser.browser.name || 'Unknown',
+      os:           parser.os.name      || 'Unknown',
+      device:       parser.device.type  || 'desktop',
+      useragent:    userAgent,
+      referer:      req.headers.referer || 'Direct',
+      latitude:     finalLat,
+      longitude:    finalLon,
+      is_pixel:     false
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Geo save error:', error);
+    res.status(500).json({ error: 'Save failed' });
+  }
+});
+
+// Tracker opslaan (met Joi validatie)
+app.post('/api/save-tracker', requireAuth, async (req, res) => {
+  try {
+    const { error, value } = trackerSchema.validate(req.body);
+    if (error) {
+      throw new ValidationError('Invalid input', error.details);
+    }
+
+    let { tracker_id, name, destination_url } = value;
+
+    // Genereer een ID als er geen is opgegeven
+    if (!tracker_id) tracker_id = generateTrackerId();
+
+    // Blokkeer reserved IDs
+    if (RESERVED_IDS.has(tracker_id.toLowerCase())) {
+      throw new ValidationError('Dit tracker-ID is gereserveerd.');
+    }
+
+    await saveTracker({ tracker_id, name, destination_url });
+    console.log(`✅ Tracker opgeslagen: ${tracker_id}`);
+    successResponse(res, { tracker_id, link: `/${tracker_id}` }, 'Tracker created successfully');
+  } catch (error) {
+    errorResponse(res, error);
+  }
+});
+
+app.get('/api/trackers', requireAuth, async (req, res) => {
+  try {
+    successResponse(res, await loadTrackers());
+  } catch (error) {
+    errorResponse(res, error);
+  }
+});
+
+app.post('/api/delete-tracker', requireAuth, async (req, res) => {
+  const { tracker_id } = req.body;
+  if (!tracker_id) return res.status(400).json({ error: 'Missing tracker_id' });
+
+  try {
+    await deleteTrackerById(tracker_id);
+    console.log(`🗑️  Tracker verwijderd: ${tracker_id}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete tracker error:', error);
+    res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
+app.get('/api/summary', requireAuth, async (req, res) => {
+  try {
+    res.json(await getSummary());
+  } catch (error) {
+    console.error('Summary error:', error);
+    res.status(500).json({ error: 'Summary failed' });
+  }
+});
+
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'views/login.html'));
+});
+
+app.post('/api/login', authLimiter, (req, res) => {
+  const { username, password } = req.body;
+  const isJson = req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
+
+  if (username === ADMIN_USER && password === ADMIN_PASS) {
+    req.session.authenticated = true;
+    req.session.user = username;
+    if (isJson) {
+      return res.json({ success: true });
+    }
+    return res.redirect('/admin');
+  }
+
+  if (isJson) {
+    return res.status(401).json({ error: 'Ongeldige gebruikersnaam of wachtwoord.' });
+  }
+
+  res.redirect('/login');
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ success: true });
+  });
+});
+
+app.get('/admin', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'views', 'admin.html'));
+});
+
+app.get('/api/logs', requireAuth, async (req, res) => {
+  try {
+    const logs     = await getLogs();
+    const trackers = useDb ? [] : await readTrackersFile();
+    const tMap     = trackers.reduce((acc, t) => { acc[t.tracker_id] = t; return acc; }, {});
+
+    res.json(logs.map(log => ({
+      ...log,
+      name: log.tracker_name || tMap[log.tracker_id]?.name || 'Onbekend'
+    })));
+  } catch (error) {
+    console.error('Load logs error:', error);
+    res.status(500).json({ error: 'Load failed' });
+  }
+});
+
+// Wildcard tracker-redirect (reserved-check ook hier)
+app.get('/:trackerId', async (req, res, next) => {
+  const trackerId = req.params.trackerId;
+  if (RESERVED_IDS.has(trackerId.toLowerCase())) return next();
+  await handleTrackerRedirect(trackerId, res);
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -696,281 +888,6 @@ app.get('/metrics', requireAuth, async (req, res) => {
   } catch (error) {
     errorResponse(res, error);
   }
-});
-
-// Login page
-app.get('/login', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views/login.html'));
-});
-
-// Admin page
-app.get('/admin', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'views/admin.html'));
-});
-
-// Homepagina uit views/index.html
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views/index.html'));
-});
-
-// API routes
-app.post('/api/login', authLimiter, (req, res) => {
-  const { error, value } = loginSchema.validate(req.body);
-  if (error) {
-    const isJson = req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
-    if (isJson) {
-      return res.status(400).json({ error: 'Invalid input', details: error.details });
-    }
-    return res.redirect('/login?error=invalid');
-  }
-
-  const { username, password } = value;
-  const isJson = req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
-
-  if (username === ADMIN_USER && password === ADMIN_PASS) {
-    req.session.authenticated = true;
-    req.session.user = username;
-    if (isJson) {
-      return res.json({ success: true });
-    }
-    return res.redirect('/admin');
-  }
-
-  if (isJson) {
-    return res.status(401).json({ error: 'Ongeldige gebruikersnaam of wachtwoord.' });
-  }
-
-  res.redirect('/login?error=invalid');
-});
-
-app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.json({ success: true });
-  });
-});
-
-app.get('/api/trackers', requireAuth, async (req, res) => {
-  try {
-    successResponse(res, await loadTrackers());
-  } catch (error) {
-    errorResponse(res, error);
-  }
-});
-
-app.get('/api/summary', requireAuth, async (req, res) => {
-  try {
-    res.json(await getSummary());
-  } catch (error) {
-    console.error('Summary error:', error);
-    res.status(500).json({ error: 'Summary failed' });
-  }
-});
-
-app.get('/api/logs', requireAuth, async (req, res) => {
-  try {
-    const logs     = await getLogs();
-    const trackers = useDb ? [] : await readTrackersFile();
-    const tMap     = trackers.reduce((acc, t) => { acc[t.tracker_id] = t; return acc; }, {});
-
-    res.json(logs.map(log => ({
-      ...log,
-      name: log.tracker_name || tMap[log.tracker_id]?.name || 'Onbekend'
-    })));
-  } catch (error) {
-    console.error('Load logs error:', error);
-    res.status(500).json({ error: 'Load failed' });
-  }
-});
-
-// Redirect-handler met HTML-escaping en fallback
-async function handleTrackerRedirect(trackerId, res) {
-  let destinationUrl = DEFAULT_REDIRECT_URL;
-  try {
-    const tracker = await loadTrackerById(trackerId);
-    if (tracker?.destination_url) {
-      destinationUrl = tracker.destination_url;
-    }
-  } catch (error) {
-    console.error('Fout bij ophalen tracker:', error);
-  }
-
-  try {
-    let html = await fsp.readFile(path.join(__dirname, 'views/redirect.html'), 'utf8');
-    // Veilige injectie in HTML data-attributen
-    html = html
-      .replace('{{DESTINATION_URL}}', escapeHtml(destinationUrl))
-      .replace('{{TRACKER_ID}}',      escapeHtml(trackerId));
-    res.send(html);
-  } catch (error) {
-    console.error('redirect.html missing or broken, using fallback:', error.message);
-    res.redirect(destinationUrl);
-  }
-}
-
-// Tracking pixel
-app.get('/pixel/:trackerId.png', pixelLimiter, async (req, res) => {
-  try {
-    const trackerId = req.params.trackerId;
-    const tracker = await loadTrackerById(trackerId);
-    
-    if (!tracker) {
-      console.warn('Invalid tracker ID for pixel:', trackerId);
-      const pixel = Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAn8B9q7xVQAAAABJRU5ErkJggg==',
-        'base64'
-      );
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      return res.send(pixel);
-    }
-    
-    const userAgent = req.headers['user-agent'] || 'Unknown';
-    if (!isBotUserAgent(userAgent)) {
-      const parser  = uaParser(userAgent);
-      await appendLog({
-        timestamp:    new Date().toISOString(),
-        tracker_id:   trackerId,
-        tracker_name: tracker?.name || 'Onbekend',
-        ip:           getClientIp(req),
-        country:      'Unknown',
-        city:         'Unknown',
-        isp:          'Unknown',
-        browser:      parser.browser.name || 'Unknown',
-        os:           parser.os.name      || 'Unknown',
-        device:       parser.device.type  || 'desktop',
-        useragent:    userAgent,
-        referer:      req.headers.referer || 'None',
-        latitude:     null,
-        longitude:    null,
-        is_pixel:     true
-      });
-    }
-  } catch (error) {
-    console.error('Pixel logging error:', error);
-  }
-
-  const pixel = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAn8B9q7xVQAAAABJRU5ErkJggg==',
-    'base64'
-  );
-  res.setHeader('Content-Type', 'image/png');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.send(pixel);
-});
-
-// Geo-log (client-side geo → server)
-app.post('/api/log-geo', geoLimiter, async (req, res) => {
-  const { error, value } = geoLogSchema.validate(req.body);
-  if (error) {
-    return res.status(400).json({ error: 'Invalid input', details: error.details });
-  }
-
-  const { tracker_id, ip: clientIp, country, city, isp, lat, lon } = value;
-  if (!tracker_id) return res.status(400).json({ error: 'No tracker_id' });
-
-  try {
-    const userAgent = req.headers['user-agent'] || 'Unknown';
-    if (isBotUserAgent(userAgent)) return res.json({ success: true });
-
-    const parser = uaParser(userAgent);
-    const tracker = await loadTrackerById(tracker_id);
-    if (!tracker) {
-      return res.status(404).json({ error: 'Tracker not found' });
-    }
-
-    const serverIp = getClientIp(req);
-    const ip = serverIp;
-    let finalCountry = country && country !== 'Unknown' ? country : null;
-    let finalCity = city && city !== 'Unknown' ? city : null;
-    let finalIsp = isp && isp !== 'Unknown' ? isp : null;
-    let finalLat = lat ?? null;
-    let finalLon = lon ?? null;
-
-    if (!finalCountry || !finalCity || !finalIsp) {
-      const geoInfo = await getGeoInfoForIp(ip);
-      if (geoInfo) {
-        finalCountry = finalCountry || geoInfo.country;
-        finalCity    = finalCity    || geoInfo.city;
-        finalIsp     = finalIsp     || geoInfo.isp;
-        finalLat     = finalLat     || geoInfo.lat;
-        finalLon     = finalLon     || geoInfo.lon;
-      }
-    }
-
-    await appendLog({
-      timestamp:    new Date().toISOString(),
-      tracker_id,
-      tracker_name: tracker?.name || 'Onbekend',
-      ip,
-      country:      finalCountry || 'Unknown',
-      city:         finalCity    || 'Unknown',
-      isp:          finalIsp     || 'Unknown',
-      browser:      parser.browser.name || 'Unknown',
-      os:           parser.os.name      || 'Unknown',
-      device:       parser.device.type  || 'desktop',
-      useragent:    userAgent,
-      referer:      req.headers.referer || 'Direct',
-      latitude:     finalLat,
-      longitude:    finalLon,
-      is_pixel:     false
-    });
-
-    res.json({ success: true });
-  } catch (error) {
-      console.error('Geo save error FULL:', error.stack || error);
-
-      res.status(500).json({
-          error: error.message,
-          stack: error.stack
-      });
-  }
-  });
-
-// Tracker opslaan (met Joi validatie)
-app.post('/api/save-tracker', requireAuth, async (req, res) => {
-  try {
-    const { error, value } = trackerSchema.validate(req.body);
-    if (error) {
-      throw new ValidationError('Invalid input', error.details);
-    }
-
-    let { tracker_id, name, destination_url } = value;
-
-    // Genereer een ID als er geen is opgegeven
-    if (!tracker_id) tracker_id = generateTrackerId();
-
-    // Blokkeer reserved IDs
-    if (RESERVED_IDS.has(tracker_id.toLowerCase())) {
-      throw new ValidationError('Dit tracker-ID is gereserveerd.');
-    }
-
-    await saveTracker({ tracker_id, name, destination_url });
-    console.log(`✅ Tracker opgeslagen: ${tracker_id}`);
-    successResponse(res, { tracker_id, link: `/${tracker_id}` }, 'Tracker created successfully');
-  } catch (error) {
-    errorResponse(res, error);
-  }
-});
-
-app.post('/api/delete-tracker', requireAuth, async (req, res) => {
-  const { tracker_id } = req.body;
-  if (!tracker_id) return res.status(400).json({ error: 'Missing tracker_id' });
-
-  try {
-    await deleteTrackerById(tracker_id);
-    console.log(`🗑️  Tracker verwijderd: ${tracker_id}`);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Delete tracker error:', error);
-    res.status(500).json({ error: 'Delete failed' });
-  }
-});
-
-// Wildcard tracker-redirect (reserved-check ook hier)
-app.get('/:trackerId', async (req, res, next) => {
-  const trackerId = req.params.trackerId;
-  if (RESERVED_IDS.has(trackerId.toLowerCase())) return next();
-  await handleTrackerRedirect(trackerId, res);
 });
 
 // 404 handler
